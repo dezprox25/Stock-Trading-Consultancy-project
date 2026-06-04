@@ -17,6 +17,66 @@ const parseStrikeSymbol = (symbol: string) => {
   };
 };
 
+const calculateMockTrendAndWarnings = (s: any) => {
+  const grid = s.grid;
+  if (!grid || grid.length === 0) return;
+  const lastCell = grid[grid.length - 1];
+  const ltp = lastCell.ltp;
+
+  // 1. Evaluate trend badge
+  const previousBadge = s.trendBadge || "FLAT";
+  const recentLtpList = grid.slice(-5).map((c: any) => c.ltp);
+  
+  let newBadge: "H_TO_L" | "L_TO_H" | "FLAT" | "REVERSAL" = "FLAT";
+  if (recentLtpList.length >= 5) {
+    let higherHighs = 0;
+    let lowerLows = 0;
+    for (let i = 1; i < recentLtpList.length; i++) {
+      if (recentLtpList[i] > recentLtpList[i - 1]) higherHighs++;
+      if (recentLtpList[i] < recentLtpList[i - 1]) lowerLows++;
+    }
+
+    if (lowerLows >= 4) {
+      newBadge = "H_TO_L";
+    } else if (higherHighs >= 4) {
+      newBadge = "L_TO_H";
+    }
+  }
+
+  // Reversal detection
+  if (previousBadge === "H_TO_L" && newBadge === "FLAT" && recentLtpList.length >= 2 && recentLtpList[recentLtpList.length - 1] > recentLtpList[recentLtpList.length - 2]) {
+    newBadge = "REVERSAL";
+  } else if (previousBadge === "L_TO_H" && newBadge === "FLAT" && recentLtpList.length >= 2 && recentLtpList[recentLtpList.length - 1] < recentLtpList[recentLtpList.length - 2]) {
+    newBadge = "REVERSAL";
+  }
+
+  s.trendBadge = newBadge;
+
+  // 2. Call-Down advisory filter (CE options only)
+  const isCE = s.strike.endsWith("CE");
+  if (isCE) {
+    // Deep loss check (>15% drop from baseline)
+    if (ltp < s.dayOpen * 0.85) {
+      s.isDeepLoss = true;
+    }
+
+    // Downtrend check (3 consecutive declining minutes)
+    const recent3 = grid.slice(-3).map((c: any) => c.ltp);
+    if (recent3.length >= 3 && recent3[0] > recent3[1] && recent3[1] > recent3[2]) {
+      s.isDowntrendActive = true;
+    }
+
+    // Recovery check (2 consecutive rising minutes clears alerts)
+    if (recent3.length >= 3 && recent3[recent3.length - 1] > recent3[recent3.length - 2] && recent3[recent3.length - 2] > recent3[recent3.length - 3]) {
+      s.isDowntrendActive = false;
+      s.isDeepLoss = false;
+    }
+  } else {
+    s.isDowntrendActive = false;
+    s.isDeepLoss = false;
+  }
+};
+
 const ensureFullStrikesData = (session: any) => {
   if (!session) return session;
 
@@ -56,10 +116,11 @@ const ensureFullStrikesData = (session: any) => {
   const isTinyCustom = currentSelected.length === 1 || currentSelected.length === 2;
 
   if (!isTinyCustom) {
-    // Pad CE strikes up to 10 if CE mode or mixed mode is active
+    // Pad CE strikes up to 5 if mixed mode is active, or up to 10 if CE mode is active
+    const maxCeCount = nextSession.sessionType === "mixed" ? 5 : 10;
     if (nextSession.sessionType === "CE" || nextSession.sessionType === "mixed") {
       let ceCount = ceSelected.length;
-      for (let i = 0; i < defaultCeStrikes.length && ceCount < 10; i++) {
+      for (let i = 0; i < defaultCeStrikes.length && ceCount < maxCeCount; i++) {
         const defaultStrike = defaultCeStrikes[i];
         if (!currentSelected.includes(defaultStrike)) {
           currentSelected.push(defaultStrike);
@@ -68,10 +129,11 @@ const ensureFullStrikesData = (session: any) => {
       }
     }
 
-    // Pad PE strikes up to 10 if PE mode or mixed mode is active
+    // Pad PE strikes up to 5 if mixed mode is active, or up to 10 if PE mode is active
+    const maxPeCount = nextSession.sessionType === "mixed" ? 5 : 10;
     if (nextSession.sessionType === "PE" || nextSession.sessionType === "mixed") {
       let peCount = peSelected.length;
-      for (let i = 0; i < defaultPeStrikes.length && peCount < 10; i++) {
+      for (let i = 0; i < defaultPeStrikes.length && peCount < maxPeCount; i++) {
         const defaultStrike = defaultPeStrikes[i];
         if (!currentSelected.includes(defaultStrike)) {
           currentSelected.push(defaultStrike);
@@ -79,6 +141,11 @@ const ensureFullStrikesData = (session: any) => {
         }
       }
     }
+  }
+
+  // Slice to max 10 to guarantee backend compatibility
+  if (currentSelected.length > 10) {
+    currentSelected = currentSelected.slice(0, 10);
   }
 
   nextSession.selectedStrikes = currentSelected;
@@ -108,7 +175,6 @@ const ensureFullStrikesData = (session: any) => {
 
   currentSelected.forEach((strike) => {
     if (!nextSession.strikes[strike]) {
-      const parsed = parseStrikeSymbol(strike);
       const base = baselines[strike] || 100.0;
 
       // Find the existing timeline length from other strikes
@@ -154,22 +220,20 @@ const ensureFullStrikesData = (session: any) => {
         }
       }
 
-      const trendBadges = ["FLAT", "L_TO_H", "H_TO_L", "REVERSAL"];
-      const trendBadge = trendBadges[Math.floor(Math.random() * trendBadges.length)];
-      const isDowntrendActive = trendBadge === "H_TO_L" || (trendBadge === "REVERSAL" && Math.random() > 0.5);
-      const isDeepLoss = isDowntrendActive && Math.random() > 0.5;
-
       nextSession.strikes[strike] = {
         strike,
         dayOpen: base,
         dayHigh: base,
         dayLow: base,
         grid,
-        trendBadge,
-        isDowntrendActive,
-        isDeepLoss,
+        trendBadge: "FLAT" as const,
+        isDowntrendActive: false,
+        isDeepLoss: false,
         pctChange: 0
       };
+
+      // Run dynamic calculations to generate accurate initial trend states
+      calculateMockTrendAndWarnings(nextSession.strikes[strike]);
     }
   });
 
@@ -180,26 +244,16 @@ const ensureFullStrikesData = (session: any) => {
 // Initial generator for fallback session data when backend session is offline
 const generateFallbackSession = () => {
   const selectedStrikes = [
-    "NIFTY21850CE",
-    "NIFTY21900CE",
-    "NIFTY21950CE",
     "NIFTY22000CE",
     "NIFTY22050CE",
     "NIFTY22100CE",
     "NIFTY22150CE",
     "NIFTY22200CE",
-    "NIFTY22250CE",
-    "NIFTY22300CE",
-    "NIFTY21850PE",
-    "NIFTY21900PE",
-    "NIFTY21950PE",
     "NIFTY22000PE",
     "NIFTY22050PE",
     "NIFTY22100PE",
     "NIFTY22150PE",
-    "NIFTY22200PE",
-    "NIFTY22250PE",
-    "NIFTY22300PE"
+    "NIFTY22200PE"
   ];
   
   const strikes: Record<string, any> = {};
@@ -261,22 +315,19 @@ const generateFallbackSession = () => {
       });
     }
 
-    const trendBadges = ["FLAT", "L_TO_H", "H_TO_L", "REVERSAL"];
-    const trendBadge = trendBadges[Math.floor(Math.random() * trendBadges.length)];
-    const isDowntrendActive = trendBadge === "H_TO_L" || (trendBadge === "REVERSAL" && Math.random() > 0.5);
-    const isDeepLoss = isDowntrendActive && Math.random() > 0.5;
-
     strikes[strike] = {
       strike,
       dayOpen: base,
       dayHigh,
       dayLow,
       grid,
-      trendBadge,
-      isDowntrendActive,
-      isDeepLoss,
+      trendBadge: "FLAT" as const,
+      isDowntrendActive: false,
+      isDeepLoss: false,
       pctChange: Number((((currentLtp - base) / base) * 100).toFixed(2))
     };
+
+    calculateMockTrendAndWarnings(strikes[strike]);
   });
 
   return {
@@ -295,7 +346,6 @@ const generateFallbackSession = () => {
 export const Module2 = () => {
   const activeSession = useStore((state) => state.activeSession);
   const setActiveSession = useStore((state) => state.setActiveSession);
-  const updateSessionStrikes = useStore((state) => state.updateSessionStrikes);
 
   // Fallback local session state to guarantee zero empty states
   const [localFallbackSession, setLocalFallbackSession] = useState<any>(() => generateFallbackSession());
@@ -372,6 +422,7 @@ export const Module2 = () => {
               s.dayHigh = Math.max(s.dayHigh, newLtp);
               s.dayLow = Math.min(s.dayLow, newLtp);
               s.pctChange = Number((((newLtp - s.dayOpen) / s.dayOpen) * 100).toFixed(2));
+              calculateMockTrendAndWarnings(s);
             }
           }
         });
@@ -419,6 +470,7 @@ export const Module2 = () => {
             isHigh: false,
             isLow: false
           });
+          calculateMockTrendAndWarnings(s);
         });
 
         return next;
@@ -442,16 +494,7 @@ export const Module2 = () => {
     }
   });
 
-  // Mutation to swap strikes during the session
-  const swapStrikesMutation = useMutation({
-    mutationFn: (newStrikes: string[]) =>
-      api.put("/api/module2/session/strikes", {
-        selectedStrikes: newStrikes
-      }),
-    onSuccess: (data) => {
-      updateSessionStrikes(data.selectedStrikes);
-    }
-  });
+
 
   // CSV Export handler (Fallback session exports client-side generated CSV)
   const handleExportCSV = async () => {
@@ -460,17 +503,47 @@ export const Module2 = () => {
 
     if (!activeSession) {
       try {
-        let csvContent = "Strike,Day Open,Day High,Day Low,Minute Columns...\n";
-        Object.keys(sessionToExport.strikes).forEach((strike) => {
+        let maxMinutes = 0;
+        Object.values(sessionToExport.strikes).forEach((s: any) => {
+          maxMinutes = Math.max(maxMinutes, s.grid.length);
+        });
+
+        const headers = ["Strike", "Day Open", "Day High", "Day Low", "Trend Badge", "Pct Change"];
+        const firstStrikeKey = Object.keys(sessionToExport.strikes)[0];
+        const firstStrike = firstStrikeKey ? sessionToExport.strikes[firstStrikeKey] : null;
+
+        for (let m = 0; m < maxMinutes; m++) {
+          const timeLabel = firstStrike?.grid[m]?.timestamp || `Min ${m}`;
+          headers.push(timeLabel);
+        }
+
+        let csvContent = headers.join(",") + "\n";
+
+        sessionToExport.selectedStrikes.forEach((strike: string) => {
           const s = sessionToExport.strikes[strike];
-          const rowData = [
+          if (!s) return;
+
+          const row = [
             strike,
-            s.dayOpen,
-            s.dayHigh,
-            s.dayLow,
-            ...s.grid.map((cell: any) => cell.ltp)
+            Math.round(s.dayOpen),
+            Math.round(s.dayHigh),
+            Math.round(s.dayLow),
+            s.trendBadge,
+            `${s.pctChange}%`
           ];
-          csvContent += rowData.join(",") + "\n";
+
+          for (let m = 0; m < maxMinutes; m++) {
+            const cell = s.grid[m];
+            if (cell) {
+              let val = Math.round(cell.ltp).toString();
+              if (cell.isHigh) val += " (H)";
+              if (cell.isLow) val += " (L)";
+              row.push(val);
+            } else {
+              row.push("");
+            }
+          }
+          csvContent += row.join(",") + "\n";
         });
         
         const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -513,50 +586,10 @@ export const Module2 = () => {
       if (prev.includes(strike)) {
         return prev.filter((s) => s !== strike);
       }
-      const maxAllowed = sessionType === "mixed" ? 20 : 10;
+      const maxAllowed = 10;
       if (prev.length >= maxAllowed) return prev;
       return [...prev, strike];
     });
-  };
-
-  // Swap strike logic while session is running
-  const handleSwapStrike = (oldStrike: string, newStrike: string) => {
-    const sessionObj = activeSession || localFallbackSession;
-    if (!sessionObj) return;
-
-    if (!activeSession) {
-      // Apply swap to local fallback session
-      setLocalFallbackSession((prev: any) => {
-        const next = JSON.parse(JSON.stringify(prev));
-        const idx = next.selectedStrikes.indexOf(oldStrike);
-        if (idx >= 0) {
-          next.selectedStrikes[idx] = newStrike;
-          
-          // Generate new strike details
-          const base = 100;
-          next.strikes[newStrike] = {
-            strike: newStrike,
-            dayOpen: base,
-            dayHigh: base,
-            dayLow: base,
-            grid: next.strikes[oldStrike]?.grid.map((c: any) => ({
-              ...c,
-              ltp: base
-            })) || [],
-            trendBadge: "FLAT",
-            isDowntrendActive: false,
-            isDeepLoss: false,
-            pctChange: 0
-          };
-          delete next.strikes[oldStrike];
-        }
-        return next;
-      });
-      return;
-    }
-
-    const nextStrikes = activeSession.selectedStrikes.map(s => s === oldStrike ? newStrike : s);
-    swapStrikesMutation.mutate(nextStrikes);
   };
 
   // Bind session data (use localFallbackSession as guaranteed fallback if activeSession has no strikes)
@@ -565,12 +598,6 @@ export const Module2 = () => {
   const currentSession = ensureFullStrikesData(rawSession);
 
   const maxMinutes = Math.max(0, ...Object.values(currentSession.strikes).map((s: any) => s.grid.length));
-  
-  const availableSwaps = (chainData?.strikes || []).reduce((acc: string[], curr: any) => {
-    acc.push(curr.CE);
-    acc.push(curr.PE);
-    return acc;
-  }, []) || [];
 
   const topStrikes = Object.values(currentSession.strikes)
     .sort((a: any, b: any) => b.pctChange - a.pctChange)
@@ -587,6 +614,9 @@ export const Module2 = () => {
       // Price Above/Below filters
       if (priceAbove !== "" && latestLtp < Number(priceAbove)) return false;
       if (priceBelow !== "" && latestLtp > Number(priceBelow)) return false;
+      
+      // Call-down advisory filter (if enabled, show only strikes with active warnings)
+      if (callDownCollapsedToggle && !s.isDowntrendActive && !s.isDeepLoss) return false;
       
       return true;
     })
@@ -614,8 +644,8 @@ export const Module2 = () => {
     console.error(`Validation Error: CE mode expects 10 rows, but only has ${actualStrikesCount} rows.`);
   } else if (currentSession.sessionType === "PE" && actualStrikesCount < 10) {
     console.error(`Validation Error: PE mode expects 10 rows, but only has ${actualStrikesCount} rows.`);
-  } else if (currentSession.sessionType === "mixed" && actualStrikesCount < 20) {
-    console.error(`Validation Error: Mixed mode expects 20 rows, but only has ${actualStrikesCount} rows.`);
+  } else if (currentSession.sessionType === "mixed" && actualStrikesCount < 10) {
+    console.error(`Validation Error: Mixed mode expects 10 rows, but only has ${actualStrikesCount} rows.`);
   }
 
   return (
@@ -643,7 +673,7 @@ export const Module2 = () => {
                   onClick={() => setFilterType(t.key as any)}
                   className={`rounded px-3 py-1.5 text-[10px] font-bold font-sans transition ${
                     filterType === t.key
-                      ? "bg-trading-neutral text-trading-bg"
+                      ? "bg-trading-neutral text-white"
                       : "text-trading-textMuted hover:text-trading-textActive"
                   }`}
                 >
@@ -664,13 +694,37 @@ export const Module2 = () => {
                   onClick={() => setSortOrder(o.key as any)}
                   className={`rounded px-3 py-1.5 text-[10px] font-bold font-sans transition ${
                     sortOrder === o.key
-                      ? "bg-trading-neutral text-trading-bg"
+                      ? "bg-trading-neutral text-white"
                       : "text-trading-textMuted hover:text-trading-textActive"
                   }`}
                 >
                   {o.label}
                 </button>
               ))}
+            </div>
+
+            {/* Price Above Filter */}
+            <div className="flex items-center space-x-2 bg-trading-bg px-3 py-1.5 rounded-lg border border-trading-border">
+              <span className="text-[10px] font-bold text-trading-textMuted uppercase font-sans">Above:</span>
+              <input
+                type="number"
+                placeholder="Min"
+                value={priceAbove}
+                onChange={(e) => setPriceAbove(e.target.value === "" ? "" : Number(e.target.value))}
+                className="w-12 bg-transparent text-xs font-bold text-trading-textActive outline-none font-mono"
+              />
+            </div>
+
+            {/* Price Below Filter */}
+            <div className="flex items-center space-x-2 bg-trading-bg px-3 py-1.5 rounded-lg border border-trading-border">
+              <span className="text-[10px] font-bold text-trading-textMuted uppercase font-sans">Below:</span>
+              <input
+                type="number"
+                placeholder="Max"
+                value={priceBelow}
+                onChange={(e) => setPriceBelow(e.target.value === "" ? "" : Number(e.target.value))}
+                className="w-12 bg-transparent text-xs font-bold text-trading-textActive outline-none font-mono"
+              />
             </div>
 
             {/* Call-down Collapse Toggle */}
@@ -695,6 +749,21 @@ export const Module2 = () => {
               }`}
             >
               HIGHLIGHT TOP 3
+            </button>
+
+            {/* Reset Filters Button */}
+            <button
+              onClick={() => {
+                setSortOrder("default");
+                setPriceAbove("");
+                setPriceBelow("");
+                setHighlightTop3(false);
+                setCallDownCollapsedToggle(false);
+                setFilterType("mixed");
+              }}
+              className="rounded-lg bg-trading-border hover:bg-trading-border/80 px-4 py-2 text-[10px] font-bold font-sans text-trading-textActive transition select-none"
+            >
+              RESET
             </button>
           </div>
 
@@ -787,7 +856,7 @@ export const Module2 = () => {
                     key={t}
                     onClick={() => setSessionType(t)}
                     className={`flex-1 rounded-md py-1.5 text-xs font-bold font-sans transition ${
-                      sessionType === t ? "bg-trading-neutral text-trading-bg" : "text-trading-textMuted hover:text-trading-textActive"
+                      sessionType === t ? "bg-trading-neutral text-white" : "text-trading-textMuted hover:text-trading-textActive"
                     }`}
                   >
                     {t.toUpperCase()}
@@ -799,7 +868,7 @@ export const Module2 = () => {
 
           <div>
             <span className="block text-xs font-semibold text-trading-textMuted uppercase mb-3">
-              Select strikes from chain ({selectedStrikes.length}/{sessionType === "mixed" ? 20 : 10} selected)
+              Select strikes from chain ({selectedStrikes.length}/10 selected)
             </span>
             <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3">
               {(chainData?.strikes || []).map((s: any) => {
@@ -840,7 +909,7 @@ export const Module2 = () => {
           <button
             onClick={() => startSessionMutation.mutate()}
             disabled={selectedStrikes.length === 0 || startSessionMutation.isPending}
-            className="rounded-lg bg-trading-neutral px-6 py-2.5 text-xs font-bold font-sans text-trading-bg transition hover:opacity-90 disabled:opacity-50"
+            className="rounded-lg bg-trading-neutral px-6 py-2.5 text-xs font-bold font-sans text-white transition hover:opacity-90 disabled:opacity-50"
           >
             Start Active Session Tracker
           </button>
@@ -864,6 +933,8 @@ function StrikeTrackerTable({
   highlightTop3: boolean;
   topStrikes: string[];
 }) {
+  const theme = useStore((state) => state.theme);
+
   return (
     <div className="rounded-xl border border-trading-border bg-trading-surface overflow-hidden shadow-xl w-full relative">
       <div className="overflow-x-auto overflow-y-auto max-h-[65vh]">
@@ -872,6 +943,9 @@ function StrikeTrackerTable({
             <tr className="bg-trading-bg text-[10px] font-bold uppercase tracking-wider text-trading-textMuted">
               <th className="py-3 px-3 min-w-[140px] sticky left-0 top-0 bg-trading-bg z-40 border-r border-b border-trading-border">
                 Strike
+              </th>
+              <th className="py-3 px-3 text-center border-r border-b border-trading-border min-w-[70px] bg-trading-bg top-0 sticky z-30">
+                Day Open
               </th>
               {Array.from({ length: maxMinutes }).map((_, m) => {
                 const firstStrikeKey = Object.keys(session.strikes)[0];
@@ -893,7 +967,7 @@ function StrikeTrackerTable({
           <tbody className="text-xs font-semibold">
             {strikesList.length === 0 ? (
               <tr>
-                <td colSpan={maxMinutes + 3} className="py-8 text-center text-trading-textMuted border-b border-trading-gridLine">
+                <td colSpan={maxMinutes + 4} className="py-8 text-center text-trading-textMuted border-b border-trading-gridLine">
                   No strikes to track in this category.
                 </td>
               </tr>
@@ -905,85 +979,101 @@ function StrikeTrackerTable({
                 const parsed = parseStrikeSymbol(strike);
 
                 const isTop3 = highlightTop3 && topStrikes.includes(strike);
+                const isDark = theme === "dark";
 
-                // Opaque backgrounds to prevent text overlay bleed-through
-                const rowBgClass = s.isDeepLoss
-                  ? "bg-[#1C1318] hover:bg-[#2A1922]"
-                  : s.isDowntrendActive
-                  ? "bg-[#151114] hover:bg-[#20181C]"
-                  : "bg-trading-surface hover:bg-[#161D27]";
+                // Dynamic theme-aware colors for warning modes and normal modes
+                let rowBgClass = "";
+                let cellBgClass = "";
 
-                const cellBgClass = s.isDeepLoss
-                  ? "bg-[#1C1318] group-hover:bg-[#2A1922]"
-                  : s.isDowntrendActive
-                  ? "bg-[#151114] group-hover:bg-[#20181C]"
-                  : "bg-[#111720] group-hover:bg-[#161D27]";
-
-                // Find indices of the most recent highest and lowest values
-                let maxLtp = -Infinity;
-                let minLtp = Infinity;
-                let highIdx = -1;
-                let lowIdx = -1;
-
-                s.grid.forEach((cell: any, idx: number) => {
-                  if (cell.ltp >= maxLtp) {
-                    maxLtp = cell.ltp;
-                    highIdx = idx;
-                  }
-                  if (cell.ltp <= minLtp) {
-                    minLtp = cell.ltp;
-                    lowIdx = idx;
-                  }
-                });
+                if (s.isDeepLoss) {
+                  rowBgClass = isDark
+                    ? "bg-[#1C1318] hover:bg-[#2A1922] text-red-200"
+                    : "bg-red-50/80 hover:bg-red-100/90 text-red-950 border-red-100";
+                  cellBgClass = isDark
+                    ? "bg-[#1C1318] group-hover:bg-[#2A1922]"
+                    : "bg-red-50 group-hover:bg-red-100";
+                } else if (s.isDowntrendActive) {
+                  rowBgClass = isDark
+                    ? "bg-[#151114] hover:bg-[#20181C] text-orange-200"
+                    : "bg-amber-50 hover:bg-amber-100/90 text-amber-950 border-amber-100";
+                  cellBgClass = isDark
+                    ? "bg-[#151114] group-hover:bg-[#20181C]"
+                    : "bg-amber-50 group-hover:bg-amber-100";
+                } else {
+                  rowBgClass = "bg-trading-surface hover:bg-trading-bg/40 text-trading-textActive";
+                  cellBgClass = "bg-trading-surface group-hover:bg-trading-bg/40";
+                }
 
                 return (
                   <tr
                     key={strike}
-                    className={`group transition duration-300 ${rowBgClass} ${
-                      isTop3 ? "border-2 border-yellow-500/80 shadow-md" : ""
-                    }`}
+                    className={`group transition duration-300 ${rowBgClass}`}
                   >
                     {/* Sticky Strike Cell (Read-Only) */}
                     <td className={`py-2 px-3 border-r border-b border-trading-border min-w-[140px] sticky left-0 z-20 ${cellBgClass}`}>
-                      <div className="flex items-center justify-between gap-1.5">
-                        <div className="flex items-center space-x-1.5">
-                          {s.isDeepLoss && <span className="text-trading-bearish">⚠️</span>}
-                          <span className="text-sm font-extrabold text-trading-textActive font-mono">
-                            {parsed.strikePrice}
-                          </span>
-                          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
-                            parsed.optionType === "CE"
-                              ? "bg-trading-bullish/10 text-trading-bullish border border-trading-bullish/25"
-                              : "bg-trading-bearish/10 text-trading-bearish border border-trading-bearish/25"
-                          }`}>
-                            {parsed.optionType}
-                          </span>
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center justify-between gap-1.5">
+                          <div className="flex items-center space-x-1.5">
+                            <span className="text-sm font-extrabold text-trading-textActive font-mono">
+                              {parsed.strikePrice}
+                            </span>
+                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
+                              parsed.optionType === "CE"
+                                ? "bg-trading-bullish/10 text-trading-bullish border border-trading-bullish/25"
+                                : "bg-trading-bearish/10 text-trading-bearish border border-trading-bearish/25"
+                            }`}>
+                              {parsed.optionType}
+                            </span>
+                          </div>
+
+                          {/* Trend Badge */}
+                          <div className="flex items-center space-x-1.5">
+                            {s.trendBadge === "L_TO_H" && (
+                              <span className="rounded bg-trading-bullish/10 px-1.5 py-0.5 text-[9px] font-black text-trading-bullish border border-trading-bullish/20">
+                                L to H ▲
+                              </span>
+                            )}
+                            {s.trendBadge === "H_TO_L" && (
+                              <span className="rounded bg-trading-bearish/10 px-1.5 py-0.5 text-[9px] font-black text-trading-bearish border border-trading-bearish/20 animate-pulse">
+                                H to L ▼
+                              </span>
+                            )}
+                            {s.trendBadge === "REVERSAL" && (
+                              <span className="rounded bg-trading-neutral/20 px-1.5 py-0.5 text-[9px] font-black text-trading-neutral border border-trading-neutral/30 animate-pulse">
+                                REV ⚡
+                              </span>
+                            )}
+                            {s.trendBadge === "FLAT" && (
+                              <span className="rounded bg-trading-border/50 px-1.5 py-0.5 text-[9px] font-sans font-bold text-trading-textMuted border border-trading-border">
+                                FLAT
+                              </span>
+                            )}
+                          </div>
                         </div>
 
-                        {/* Trend Badge */}
-                        <div className="flex items-center space-x-1.5">
-                          {s.trendBadge === "L_TO_H" && (
-                            <span className="rounded bg-trading-bullish/10 px-1.5 py-0.5 text-[9px] font-black text-trading-bullish border border-trading-bullish/20">
-                              L to H ▲
+                        {/* Top 3 & Call-Down Warnings Badges */}
+                        <div className="flex flex-wrap gap-1.5 mt-0.5">
+                          {isTop3 && (
+                            <span className="rounded bg-yellow-500/25 px-1.5 py-0.5 text-[9px] font-black text-yellow-500 border border-yellow-500/30 animate-pulse">
+                              ⭐ TOP 3
                             </span>
                           )}
-                          {s.trendBadge === "H_TO_L" && (
-                            <span className="rounded bg-trading-bearish/10 px-1.5 py-0.5 text-[9px] font-black text-trading-bearish border border-trading-bearish/20 animate-pulse">
-                              H to L ▼
+                          {s.isDeepLoss ? (
+                            <span className="rounded bg-red-500/25 px-1.5 py-0.5 text-[9px] font-black text-red-500 border border-red-500/30 animate-pulse">
+                              🚨 SEVERE (-15%)
                             </span>
-                          )}
-                          {s.trendBadge === "REVERSAL" && (
-                            <span className="rounded bg-trading-neutral/20 px-1.5 py-0.5 text-[9px] font-black text-trading-neutral border border-trading-neutral/30 animate-pulse">
-                              REV ⚡
+                          ) : s.isDowntrendActive ? (
+                            <span className="rounded bg-orange-500/25 px-1.5 py-0.5 text-[9px] font-black text-orange-500 border border-orange-500/30">
+                              ⚠️ DOWN 3m
                             </span>
-                          )}
-                          {s.trendBadge === "FLAT" && (
-                            <span className="rounded bg-trading-border/50 px-1.5 py-0.5 text-[9px] font-sans font-bold text-trading-textMuted border border-trading-border">
-                              FLAT
-                            </span>
-                          )}
+                          ) : null}
                         </div>
                       </div>
+                    </td>
+
+                    {/* Day Open Cell */}
+                    <td className="py-2 px-3 text-center font-mono text-trading-neutral border-r border-b border-trading-border">
+                      {Math.round(s.dayOpen)}
                     </td>
 
                     {/* Minute-by-Minute Columns */}
@@ -993,9 +1083,12 @@ function StrikeTrackerTable({
                         return <td key={m} className="py-2 px-2 text-center text-trading-border bg-trading-surface/10 border-b border-trading-gridLine">-</td>;
                       }
 
-                      // Event-based High / Low highlighting logic (Most Recent Day High/Low)
-                      const isCellHigh = m === highIdx;
-                      const isCellLow = m === lowIdx;
+                      // Event-based High / Low highlighting logic
+                      const roundedLtp = Math.round(cell.ltp);
+                      const roundedHigh = Math.round(s.dayHigh);
+                      const roundedLow = Math.round(s.dayLow);
+                      const isCellHigh = roundedHigh !== roundedLow && roundedLtp === roundedHigh;
+                      const isCellLow = roundedHigh !== roundedLow && roundedLtp === roundedLow;
 
                       let cellClass = "bg-trading-surface/50 text-trading-textMuted";
                       if (isCellHigh) {
@@ -1012,7 +1105,7 @@ function StrikeTrackerTable({
                             s.isDowntrendActive ? "bg-call-down-stripes" : ""
                           }`}
                         >
-                          {cell.ltp}
+                          {roundedLtp}
                         </td>
                       );
                     })}
@@ -1020,12 +1113,12 @@ function StrikeTrackerTable({
                     {/* Sticky right summaries */}
                     <td className={`py-2 px-3 text-center font-mono text-trading-bullish border-l border-r border-b border-trading-border sticky right-[65px] z-20 w-[65px] min-w-[65px] ${cellBgClass}`}>
                       <span className="bg-trading-bg/25 px-1.5 py-0.5 rounded border border-trading-bullish/10">
-                        {s.dayHigh}
+                        {Math.round(s.dayHigh)}
                       </span>
                     </td>
                     <td className={`py-2 px-3 text-center font-mono text-trading-bearish border-b border-trading-border sticky right-0 z-20 w-[65px] min-w-[65px] ${cellBgClass}`}>
                       <span className="bg-trading-bg/25 px-1.5 py-0.5 rounded border border-trading-bearish/10">
-                        {s.dayLow}
+                        {Math.round(s.dayLow)}
                       </span>
                     </td>
                   </tr>

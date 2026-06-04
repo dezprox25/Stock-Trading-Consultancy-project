@@ -143,7 +143,7 @@ export const getOHLCBars = async (req: AuthenticatedRequest, res: Response) => {
     const { symbol, tf } = req.params;
     const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
 
-    let bars = [];
+    let bars: any[] = [];
     try {
       const dbBars = await FuturesOHLC.find({ symbol, timeframe: tf })
         .sort({ bar_time: -1 })

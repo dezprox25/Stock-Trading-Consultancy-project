@@ -112,14 +112,18 @@ const startMockGenerator = () => {
     let spotPrice = 22100.0;
     let futPrice = 22135.0;
     // Option strike baselines
-    const strikes = [
-        { symbol: "NIFTY22000CE", base: 140.0 },
-        { symbol: "NIFTY22100CE", base: 85.0 },
-        { symbol: "NIFTY22200CE", base: 45.0 },
-        { symbol: "NIFTY21900PE", base: 60.0 },
-        { symbol: "NIFTY22000PE", base: 100.0 },
-        { symbol: "NIFTY22100PE", base: 155.0 }
-    ];
+    const strikes = [];
+    const startStrike = 21700;
+    const endStrike = 22500;
+    const step = 50;
+    for (let s = startStrike; s <= endStrike; s += step) {
+        const ceOffset = (22100 - s) * 0.8;
+        const ceBase = Math.max(5, 85 + ceOffset);
+        const peOffset = (s - 22100) * 0.8;
+        const peBase = Math.max(5, 85 + peOffset);
+        strikes.push({ symbol: `NIFTY${s}CE`, base: ceBase });
+        strikes.push({ symbol: `NIFTY${s}PE`, base: peBase });
+    }
     mockInterval = setInterval(async () => {
         const timestamp = new Date();
         // Simulate Spot drift

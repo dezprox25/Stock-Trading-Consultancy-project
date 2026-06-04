@@ -13,23 +13,23 @@ import { useEffect, useRef, useState } from "react";
 
 // Mapping indicator status to HSL custom styling configurations
 const CALL_COLOR_MAP: Record<string, { bg: string; text: string; label: string; desc: string }> = {
-  CALL_BULLISH: { bg: "bg-trading-bullish", text: "text-trading-bg", label: "CALL BULLISH", desc: "Strong bullish — conditions favourable for calls" },
-  CALL_NEAR_RESISTANCE: { bg: "bg-amber-500", text: "text-trading-bg", label: "NEAR RESISTANCE", desc: "Watch closely — potential breakout or rejection" },
-  CALL_POSITIVE_BIAS: { bg: "bg-emerald-500/20 text-trading-bullish border border-trading-bullish/30", text: "text-trading-bullish", label: "POSITIVE BIAS", desc: "Price above equilibrium — call-friendly territory" },
-  CALL_NEUTRAL: { bg: "bg-yellow-500/20 text-yellow-500 border border-yellow-500/30", text: "text-yellow-500", label: "NEUTRAL", desc: "At pivot — indecision zone, wait for direction" },
-  CALL_BEARISH_BIAS: { bg: "bg-red-500/20 text-trading-bearish border border-trading-bearish/30", text: "text-trading-bearish", label: "BEARISH BIAS", desc: "Price below equilibrium — not ideal for call view" },
-  CALL_BEARISH: { bg: "bg-trading-bearish", text: "text-trading-bg", label: "CALL BEARISH", desc: "Avoid call view — price breaking down" },
-  DIVERGENCE_WARNING: { bg: "bg-orange-500", text: "text-trading-bg", label: "DIVERGENCE WARNING", desc: "Data mismatch — verify prices before forming a view" }
+  CALL_BULLISH: { bg: "bg-trading-bullish", text: "text-white", label: "CALL BULLISH", desc: "Strong bullish — conditions favourable for calls" },
+  CALL_NEAR_RESISTANCE: { bg: "bg-amber-500", text: "text-white", label: "NEAR RESISTANCE", desc: "Watch closely — potential breakout or rejection" },
+  CALL_POSITIVE_BIAS: { bg: "bg-emerald-500/10 border border-trading-bullish/30", text: "text-trading-bullish", label: "POSITIVE BIAS", desc: "Price above equilibrium — call-friendly territory" },
+  CALL_NEUTRAL: { bg: "bg-yellow-500/10 border border-yellow-500/30", text: "text-yellow-500", label: "NEUTRAL", desc: "At pivot — indecision zone, wait for direction" },
+  CALL_BEARISH_BIAS: { bg: "bg-red-500/10 border border-trading-bearish/30", text: "text-trading-bearish", label: "BEARISH BIAS", desc: "Price below equilibrium — not ideal for call view" },
+  CALL_BEARISH: { bg: "bg-trading-bearish", text: "text-white", label: "CALL BEARISH", desc: "Avoid call view — price breaking down" },
+  DIVERGENCE_WARNING: { bg: "bg-orange-500", text: "text-white", label: "DIVERGENCE WARNING", desc: "Data mismatch — verify prices before forming a view" }
 };
 
 const PUT_COLOR_MAP: Record<string, { bg: string; text: string; label: string; desc: string }> = {
-  PUT_BULLISH: { bg: "bg-trading-bullish", text: "text-trading-bg", label: "PUT BULLISH", desc: "Conditions favourable for puts" },
-  PUT_NEAR_SUPPORT: { bg: "bg-amber-500", text: "text-trading-bg", label: "NEAR SUPPORT", desc: "Watch closely — potential breakdown or bounce" },
-  PUT_POSITIVE_BIAS: { bg: "bg-emerald-500/20 text-trading-bullish border border-trading-bullish/30", text: "text-trading-bullish", label: "POSITIVE BIAS", desc: "Price below equilibrium — put-friendly territory" },
-  PUT_NEUTRAL: { bg: "bg-yellow-500/20 text-yellow-500 border border-yellow-500/30", text: "text-yellow-500", label: "NEUTRAL", desc: "At pivot — indecision zone, wait for direction" },
-  PUT_BEARISH_BIAS: { bg: "bg-red-500/20 text-trading-bearish border border-trading-bearish/30", text: "text-trading-bearish", label: "BEARISH BIAS", desc: "Price above equilibrium — not ideal for put view" },
-  PUT_BEARISH: { bg: "bg-trading-bearish", text: "text-trading-bg", label: "PUT BEARISH", desc: "Avoid put view — price breaking up" },
-  SENTIMENT_ALERT: { bg: "bg-trading-sentiment", text: "text-trading-bg", label: "SENTIMENT ALERT", desc: "OI indicates extreme sentiment — review before deciding" }
+  PUT_BULLISH: { bg: "bg-trading-bullish", text: "text-white", label: "PUT BULLISH", desc: "Conditions favourable for puts" },
+  PUT_NEAR_SUPPORT: { bg: "bg-amber-500", text: "text-white", label: "NEAR SUPPORT", desc: "Watch closely — potential breakdown or bounce" },
+  PUT_POSITIVE_BIAS: { bg: "bg-emerald-500/10 border border-trading-bullish/30", text: "text-trading-bullish", label: "POSITIVE BIAS", desc: "Price below equilibrium — put-friendly territory" },
+  PUT_NEUTRAL: { bg: "bg-yellow-500/10 border border-yellow-500/30", text: "text-yellow-500", label: "NEUTRAL", desc: "At pivot — indecision zone, wait for direction" },
+  PUT_BEARISH_BIAS: { bg: "bg-red-500/10 border border-trading-bearish/30", text: "text-trading-bearish", label: "BEARISH BIAS", desc: "Price above equilibrium — not ideal for put view" },
+  PUT_BEARISH: { bg: "bg-trading-bearish", text: "text-white", label: "PUT BEARISH", desc: "Avoid put view — price breaking up" },
+  SENTIMENT_ALERT: { bg: "bg-trading-sentiment", text: "text-white", label: "SENTIMENT ALERT", desc: "OI indicates extreme sentiment — review before deciding" }
 };
 
 export const Module1 = () => {
@@ -41,7 +41,7 @@ export const Module1 = () => {
 
   // Live prices and cached socket signals
   const prices = useStore((state) => state.prices);
-  const activeIndicators = useStore((state) => state.indicators[selectedSymbol]?.[selectedTimeframe]?.[selectedMethod]);
+
 
   // Keep track of previous prices to show green/red flash arrows
   const prevFutPriceRef = useRef<number>(0);
@@ -246,7 +246,7 @@ export const Module1 = () => {
                         {(() => {
                           const props = getIndicatorProps(row.callState, true);
                           return (
-                            <div className={`mx-auto rounded px-2.5 py-0.5 text-center text-[10px] font-black tracking-wide max-w-[120px] ${props.bg}`}>
+                            <div className={`mx-auto rounded px-2.5 py-0.5 text-center text-[10px] font-black tracking-wide max-w-[120px] ${props.bg} ${props.text}`}>
                               {props.label}
                             </div>
                           );
@@ -256,7 +256,7 @@ export const Module1 = () => {
                         {(() => {
                           const props = getIndicatorProps(row.putState, false);
                           return (
-                            <div className={`mx-auto rounded px-2.5 py-0.5 text-center text-[10px] font-black tracking-wide max-w-[120px] ${props.bg}`}>
+                            <div className={`mx-auto rounded px-2.5 py-0.5 text-center text-[10px] font-black tracking-wide max-w-[120px] ${props.bg} ${props.text}`}>
                               {props.label}
                             </div>
                           );

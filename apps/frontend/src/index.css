@@ -2,6 +2,38 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --trading-bg: #F8FAFC;         /* Extremely clean light slate background */
+  --trading-surface: #FFFFFF;    /* Pure white panel background */
+  --trading-border: #E2E8F0;     /* Soft slate gray borders */
+  --trading-grid-line: #F1F5F9;  /* Subtle divider lines */
+  --trading-text-muted: #64748B; /* Professional slate gray for metadata */
+  --trading-text-active: #0F172A;/* Deep slate for primary text readability */
+  --trading-bullish: #00D09C;    /* Elegant Groww emerald green */
+  --trading-bearish: #EB5757;    /* Modern professional crimson red */
+  --trading-neutral: #00B5B5;    /* Vibrant teal for primary actions/navigation */
+  --trading-divergence: #F59E0B; /* Warm amber for warnings */
+  --trading-sentiment: #8B5CF6;  /* Tech purple */
+  --trading-day-high: #3B82F6;   /* Classic professional blue for day high */
+  --trading-day-low: #64748B;    /* Clean slate gray for day low */
+}
+
+.dark {
+  --trading-bg: #0A0E13;
+  --trading-surface: #111A24;
+  --trading-border: #1F2E3D;
+  --trading-grid-line: #172330;
+  --trading-text-muted: #7A8C9E;
+  --trading-text-active: #F8FAFC;
+  --trading-bullish: #10B981;
+  --trading-bearish: #F43F5E;
+  --trading-neutral: #14B8A6;
+  --trading-divergence: #F59E0B;
+  --trading-sentiment: #8B5CF6;
+  --trading-day-high: #2563EB;
+  --trading-day-low: #64748B;
+}
+
 @layer utilities {
   /* Scrollbar customization for data density tables */
   ::-webkit-scrollbar {
@@ -9,14 +41,14 @@
     height: 6px;
   }
   ::-webkit-scrollbar-track {
-    background: #080B0E;
+    background: var(--trading-bg);
   }
   ::-webkit-scrollbar-thumb {
-    background: #1F2937;
+    background: var(--trading-border);
     border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #374151;
+    background: var(--trading-text-muted);
   }
 }
 

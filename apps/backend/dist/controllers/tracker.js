@@ -30,14 +30,29 @@ exports.startSession = startSession;
 const getCurrentSession = async (req, res) => {
     try {
         const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ error: "Unauthorized" });
+        }
         // Find the latest session created today for this user
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        const doc = await Module2Session_1.Module2Session.findOne({
-            user_id: userId,
-            created_at: { $gte: today }
-        }).sort({ created_at: -1 });
+        let doc = null;
+        try {
+            doc = await Module2Session_1.Module2Session.findOne({
+                user_id: userId,
+                created_at: { $gte: today }
+            }).sort({ created_at: -1 });
+        }
+        catch (err) {
+            console.warn("[Tracker] DB offline. Fetching active session from memory cache.");
+        }
         if (!doc) {
+            // Fallback: check in-memory activeSessions
+            const userSessions = Object.values(trackerService_1.activeSessions).filter((s) => s.userId === userId && new Date(s.createdAt).getTime() >= today.getTime());
+            if (userSessions.length > 0) {
+                // Return latest
+                return res.status(200).json(userSessions[userSessions.length - 1]);
+            }
             return res.status(200).json(null);
         }
         const session = await (0, trackerService_1.getSessionData)(doc._id.toString());
@@ -58,16 +73,36 @@ const updateStrikes = async (req, res) => {
         }
         const { selectedStrikes } = parseResult.data;
         const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ error: "Unauthorized" });
+        }
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        const doc = await Module2Session_1.Module2Session.findOne({
-            user_id: userId,
-            created_at: { $gte: today }
-        }).sort({ created_at: -1 });
-        if (!doc) {
+        let doc = null;
+        try {
+            doc = await Module2Session_1.Module2Session.findOne({
+                user_id: userId,
+                created_at: { $gte: today }
+            }).sort({ created_at: -1 });
+        }
+        catch (err) {
+            console.warn("[Tracker] DB offline during updateStrikes. Checking memory cache.");
+        }
+        let sessionId = null;
+        if (doc) {
+            sessionId = doc._id.toString();
+        }
+        else {
+            // Fallback: check in-memory activeSessions
+            const userSessions = Object.values(trackerService_1.activeSessions).filter((s) => s.userId === userId && new Date(s.createdAt).getTime() >= today.getTime());
+            if (userSessions.length > 0) {
+                sessionId = userSessions[userSessions.length - 1].sessionId;
+            }
+        }
+        if (!sessionId) {
             return res.status(404).json({ error: "No active session found for today" });
         }
-        const updatedSession = await (0, trackerService_1.updateTrackerStrikes)(doc._id.toString(), selectedStrikes);
+        const updatedSession = await (0, trackerService_1.updateTrackerStrikes)(sessionId, selectedStrikes);
         return res.status(200).json(updatedSession);
     }
     catch (error) {
@@ -100,22 +135,41 @@ exports.updateFilters = updateFilters;
 const exportCSV = async (req, res) => {
     try {
         const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ error: "Unauthorized" });
+        }
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        const doc = await Module2Session_1.Module2Session.findOne({
-            user_id: userId,
-            created_at: { $gte: today }
-        }).sort({ created_at: -1 });
-        if (!doc) {
+        let doc = null;
+        try {
+            doc = await Module2Session_1.Module2Session.findOne({
+                user_id: userId,
+                created_at: { $gte: today }
+            }).sort({ created_at: -1 });
+        }
+        catch (err) {
+            console.warn("[Tracker] DB offline during exportCSV. Checking memory cache.");
+        }
+        let sessionId = null;
+        if (doc) {
+            sessionId = doc._id.toString();
+        }
+        else {
+            const userSessions = Object.values(trackerService_1.activeSessions).filter((s) => s.userId === userId && new Date(s.createdAt).getTime() >= today.getTime());
+            if (userSessions.length > 0) {
+                sessionId = userSessions[userSessions.length - 1].sessionId;
+            }
+        }
+        if (!sessionId) {
             return res.status(404).json({ error: "No active session found for today" });
         }
-        const session = await (0, trackerService_1.getSessionData)(doc._id.toString());
+        const session = await (0, trackerService_1.getSessionData)(sessionId);
         if (!session) {
             return res.status(404).json({ error: "Session data not found" });
         }
         const csvContent = buildCSV(session);
         res.setHeader("Content-Type", "text/csv");
-        res.setHeader("Content-Disposition", `attachment; filename=session_${doc._id}.csv`);
+        res.setHeader("Content-Disposition", `attachment; filename=session_${sessionId}.csv`);
         return res.status(200).send(csvContent);
     }
     catch (error) {

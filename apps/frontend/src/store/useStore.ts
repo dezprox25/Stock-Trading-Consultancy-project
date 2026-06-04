@@ -44,6 +44,10 @@ interface AppState {
   setActiveSession: (session: Module2SessionData | null) => void;
   updateSessionStrikes: (strikes: string[]) => void;
   appendTrackerCell: (strike: string, cell: Module2Cell, stateUpdate: Partial<Module2StrikeState>) => void;
+
+  // Theme Management
+  theme: "light" | "dark";
+  toggleTheme: () => void;
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -52,6 +56,10 @@ export const useStore = create<AppState>((set) => ({
   accessToken: null,
   setAuth: (user, token) => set({ user, accessToken: token }),
   clearAuth: () => set({ user: null, accessToken: null, activeSession: null }),
+
+  // Theme State
+  theme: "light",
+  toggleTheme: () => set((state) => ({ theme: state.theme === "dark" ? "light" : "dark" })),
 
   // Watchlist State
   watchlist: ["NIFTY-SPOT", "NIFTY-FUT"],
