@@ -70,6 +70,6 @@ const proxy = new Proxy({}, {
   }
 });
 
-export default proxy;
+export default proxy as any;
 export { Redis };
 

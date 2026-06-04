@@ -82,12 +82,12 @@ const executeMinuteBoundary = async () => {
 
       // If strike state doesn't exist, initialize it
       if (!strikeState) {
-        const dayOpen = ltp || 100; // default fallback if feed is not live yet
+        const dayOpen = ltp || 0; // Capture Day Open baseline at first observation
         strikeState = {
           strike,
           dayOpen,
-          dayHigh: dayOpen,
-          dayLow: dayOpen,
+          dayHigh: dayOpen || 100,
+          dayLow: dayOpen || 100,
           grid: [],
           trendBadge: "FLAT",
           isDowntrendActive: false,
@@ -97,17 +97,34 @@ const executeMinuteBoundary = async () => {
         session.strikes[strike] = strikeState;
       }
 
+      // Capture Day Open baseline at first observation!
+      if (strikeState.dayOpen === 0 && ltp > 0) {
+        strikeState.dayOpen = ltp;
+        strikeState.dayHigh = ltp;
+        strikeState.dayLow = ltp;
+        session.dayOpenPrices[strike] = ltp;
+        try {
+          await Module2Session.findByIdAndUpdate(sessionId, {
+            day_open_prices_json: session.dayOpenPrices
+          });
+        } catch (err) {
+          // Ignore DB connection errors in offline mode
+        }
+      }
+
       // If price from Redis is 0/missing, fallback to previous price
       if (ltp === 0 && strikeState.grid.length > 0) {
         ltp = strikeState.grid[strikeState.grid.length - 1].ltp;
       } else if (ltp === 0) {
-        ltp = strikeState.dayOpen;
+        ltp = strikeState.dayOpen || 100;
       }
 
       // Update High/Low boundaries
-      strikeState.dayHigh = Math.max(strikeState.dayHigh, ltp);
-      strikeState.dayLow = Math.min(strikeState.dayLow, ltp);
-      strikeState.pctChange = Number((((ltp - strikeState.dayOpen) / strikeState.dayOpen) * 100).toFixed(2));
+      strikeState.dayHigh = Math.max(strikeState.dayHigh || ltp, ltp);
+      strikeState.dayLow = Math.min(strikeState.dayLow || ltp, ltp);
+      
+      const denominator = strikeState.dayOpen || 100;
+      strikeState.pctChange = Number((((ltp - denominator) / denominator) * 100).toFixed(2));
 
       // 2. Evaluate trend badge
       const previousBadge = strikeState.trendBadge;
@@ -221,14 +238,14 @@ export const startTrackerSession = async (
 
   for (const strike of selectedStrikes) {
     const rawPrice = await redis.get(`ltp:${strike}`);
-    const ltp = rawPrice ? Math.floor(parseFloat(rawPrice)) : 100; // default baseline
+    const ltp = rawPrice ? Math.floor(parseFloat(rawPrice)) : 0; // Capture baseline at first observation
 
     dayOpenPrices[strike] = ltp;
     strikes[strike] = {
       strike,
       dayOpen: ltp,
-      dayHigh: ltp,
-      dayLow: ltp,
+      dayHigh: ltp || 100,
+      dayLow: ltp || 100,
       grid: [],
       trendBadge: "FLAT",
       isDowntrendActive: false,
@@ -296,14 +313,14 @@ export const updateTrackerStrikes = async (
   for (const strike of newStrikes) {
     if (!session.selectedStrikes.includes(strike)) {
       const rawPrice = await redis.get(`ltp:${strike}`);
-      const ltp = rawPrice ? Math.floor(parseFloat(rawPrice)) : 100;
+      const ltp = rawPrice ? Math.floor(parseFloat(rawPrice)) : 0; // Capture baseline at first observation
 
       session.dayOpenPrices[strike] = ltp;
       session.strikes[strike] = {
         strike,
         dayOpen: ltp,
-        dayHigh: ltp,
-        dayLow: ltp,
+        dayHigh: ltp || 100,
+        dayLow: ltp || 100,
         grid: [],
         trendBadge: "FLAT",
         isDowntrendActive: false,

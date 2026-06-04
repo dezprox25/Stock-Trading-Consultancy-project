@@ -28,6 +28,8 @@ function NavigationLink({ to, label, icon }: { to: string; label: string; icon: 
 
 function TopBar({ user, handleLogout }: { user: any; handleLogout: () => void }) {
   const [time, setTime] = useState(new Date());
+  const theme = useStore((state) => state.theme);
+  const toggleTheme = useStore((state) => state.toggleTheme);
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -61,6 +63,14 @@ function TopBar({ user, handleLogout }: { user: any; handleLogout: () => void })
 
       {/* User profile & Logout */}
       <div className="flex items-center space-x-4">
+        {/* Light/Dark Toggle */}
+        <button
+          onClick={toggleTheme}
+          className="rounded border border-trading-border bg-trading-bg hover:bg-trading-border/80 px-3 py-1.5 text-xs font-sans font-bold text-trading-textActive transition active:scale-95 flex items-center gap-1.5"
+        >
+          {theme === "dark" ? "☀️ Light" : "🌙 Dark"}
+        </button>
+
         <div className="flex items-center space-x-2">
           <span className="text-xs font-sans text-trading-textMuted uppercase tracking-wider">User:</span>
           <span className="text-sm font-sans font-extrabold text-trading-textActive">
@@ -78,9 +88,48 @@ function TopBar({ user, handleLogout }: { user: any; handleLogout: () => void })
   );
 }
 
+function MobileTabs() {
+  const location = useLocation();
+
+  return (
+    <div className="flex border-b border-trading-border bg-trading-surface p-1 select-none md:hidden gap-1.5 sticky top-16 z-20 shadow-sm">
+      <Link
+        to="/dashboard/module-1"
+        className={`flex-1 text-center py-2.5 text-xs font-bold transition-all rounded-lg ${
+          location.pathname === "/dashboard/module-1"
+            ? "bg-trading-neutral/10 text-trading-neutral border border-trading-neutral/25"
+            : "text-trading-textMuted hover:text-trading-textActive"
+        }`}
+      >
+        📊 Pivot Table
+      </Link>
+      <Link
+        to="/dashboard/module-2"
+        className={`flex-1 text-center py-2.5 text-xs font-bold transition-all rounded-lg ${
+          location.pathname === "/dashboard/module-2"
+            ? "bg-trading-neutral/10 text-trading-neutral border border-trading-neutral/25"
+            : "text-trading-textMuted hover:text-trading-textActive"
+        }`}
+      >
+        ⚡ Strike Tracker
+      </Link>
+    </div>
+  );
+}
+
 function App() {
   const user = useStore((state) => state.user);
   const clearAuth = useStore((state) => state.clearAuth);
+  const theme = useStore((state) => state.theme);
+
+  // Synchronize document element class with store theme state
+  useEffect(() => {
+    if (theme === "dark") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }, [theme]);
 
   // Hook establishes a persistent connection to Socket.io whenever user is authenticated
   useSocket();
@@ -106,8 +155,8 @@ function App() {
   return (
     <BrowserRouter>
       <div className="flex min-h-screen bg-trading-bg text-trading-textActive antialiased selection:bg-trading-neutral selection:text-trading-bg">
-        {/* Left Sidebar */}
-        <aside className="fixed inset-y-0 left-0 z-20 flex w-64 flex-col border-r border-trading-border bg-trading-surface select-none">
+        {/* Left Sidebar (Hidden on mobile/tablet) */}
+        <aside className="hidden md:flex fixed inset-y-0 left-0 z-20 w-64 flex-col border-r border-trading-border bg-trading-surface select-none">
           {/* Logo */}
           <div className="flex h-16 items-center px-6 border-b border-trading-border gap-3">
             <span className="text-2xl">📈</span>
@@ -124,9 +173,12 @@ function App() {
         </aside>
 
         {/* Main Content Area */}
-        <div className="pl-64 flex flex-col flex-1 min-h-screen min-w-0 overflow-x-hidden">
+        <div className="md:pl-64 flex flex-col flex-1 min-h-screen min-w-0 overflow-x-hidden">
           {/* Top Bar */}
           <TopBar user={user} handleLogout={handleLogout} />
+
+          {/* Mobile responsive navigation tabs */}
+          <MobileTabs />
 
           {/* Page Content */}
           <main className="flex-1 p-6 overflow-y-auto min-w-0 max-w-full overflow-x-hidden">

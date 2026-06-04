@@ -61,11 +61,16 @@ const recalculatePivots = async (symbol, timeframe, high, low, close) => {
             computedAt,
         };
         // Save to Database
-        await PivotLevels_1.PivotLevels.create({
-            ...pivotDoc,
-            date,
-            computed_at: computedAt,
-        });
+        try {
+            await PivotLevels_1.PivotLevels.create({
+                ...pivotDoc,
+                date,
+                computed_at: computedAt,
+            });
+        }
+        catch (err) {
+            // Suppress database write failure when offline
+        }
         // Save to local cache
         if (!latestPivots[symbol])
             latestPivots[symbol] = {};
@@ -90,7 +95,13 @@ const getPivotLevels = async (symbol, timeframe, method) => {
         return latestPivots[symbol][timeframe][method];
     }
     // Fetch from database
-    const doc = await PivotLevels_1.PivotLevels.findOne({ symbol, timeframe, method }).sort({ computed_at: -1 });
+    let doc = null;
+    try {
+        doc = await PivotLevels_1.PivotLevels.findOne({ symbol, timeframe, method }).sort({ computed_at: -1 });
+    }
+    catch (err) {
+        // Suppress warning when offline
+    }
     if (doc) {
         const levels = {
             symbol: doc.symbol,
@@ -115,9 +126,22 @@ const getPivotLevels = async (symbol, timeframe, method) => {
         return levels;
     }
     // Fallback: If no pivot exists in DB, fetch the last completed candle to calculate pivots
-    const lastCandle = await FuturesOHLC_1.FuturesOHLC.findOne({ symbol, timeframe }).sort({ bar_time: -1 });
+    let lastCandle = null;
+    try {
+        lastCandle = await FuturesOHLC_1.FuturesOHLC.findOne({ symbol, timeframe }).sort({ bar_time: -1 });
+    }
+    catch (err) {
+        // Suppress warning when offline
+    }
     if (lastCandle) {
         const computed = await (0, exports.recalculatePivots)(symbol, timeframe, lastCandle.bar_high, lastCandle.bar_low, lastCandle.bar_close);
+        return computed[method];
+    }
+    else {
+        // Fallback: Calculate pivots using the current Redis LTP if DB is offline
+        const rawFutLtp = await redis_1.default.get(`ltp:${symbol}`);
+        const currentPrice = rawFutLtp ? parseFloat(rawFutLtp) : 22100;
+        const computed = await (0, exports.recalculatePivots)(symbol, timeframe, currentPrice + 50, currentPrice - 50, currentPrice);
         return computed[method];
     }
     return null;

@@ -3,13 +3,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getSessionData = exports.resumeSession = exports.updateTrackerStrikes = exports.startTrackerSession = exports.initTrackerEngine = void 0;
+exports.getSessionData = exports.resumeSession = exports.updateTrackerStrikes = exports.startTrackerSession = exports.initTrackerEngine = exports.activeSessions = void 0;
 const Module2Session_1 = require("../models/Module2Session");
 const Module2StrikeTick_1 = require("../models/Module2StrikeTick");
 const redis_1 = __importDefault(require("../config/redis"));
 const socketService_1 = require("./socketService");
 // In-memory cache for active tracker sessions to avoid database load
-const activeSessions = {};
+exports.activeSessions = {};
 let boundaryTimer = null;
 /**
  * Initializes the Module 2 tracking engine and schedules the minute boundary loop
@@ -62,12 +62,12 @@ const executeMinuteBoundary = async () => {
         hour: "2-digit",
         minute: "2-digit"
     });
-    const sessionIds = Object.keys(activeSessions);
+    const sessionIds = Object.keys(exports.activeSessions);
     if (sessionIds.length === 0)
         return;
     console.log(`[TrackerEngine] Boundary trigger at ${timeString}. Processing ${sessionIds.length} sessions...`);
     for (const sessionId of sessionIds) {
-        const session = activeSessions[sessionId];
+        const session = exports.activeSessions[sessionId];
         for (const strike of session.selectedStrikes) {
             // 1. Fetch latest price from Redis cache
             const rawPrice = await redis_1.default.get(`ltp:${strike}`);
@@ -75,12 +75,12 @@ const executeMinuteBoundary = async () => {
             let strikeState = session.strikes[strike];
             // If strike state doesn't exist, initialize it
             if (!strikeState) {
-                const dayOpen = ltp || 100; // default fallback if feed is not live yet
+                const dayOpen = ltp || 0; // Capture Day Open baseline at first observation
                 strikeState = {
                     strike,
                     dayOpen,
-                    dayHigh: dayOpen,
-                    dayLow: dayOpen,
+                    dayHigh: dayOpen || 100,
+                    dayLow: dayOpen || 100,
                     grid: [],
                     trendBadge: "FLAT",
                     isDowntrendActive: false,
@@ -89,17 +89,33 @@ const executeMinuteBoundary = async () => {
                 };
                 session.strikes[strike] = strikeState;
             }
+            // Capture Day Open baseline at first observation!
+            if (strikeState.dayOpen === 0 && ltp > 0) {
+                strikeState.dayOpen = ltp;
+                strikeState.dayHigh = ltp;
+                strikeState.dayLow = ltp;
+                session.dayOpenPrices[strike] = ltp;
+                try {
+                    await Module2Session_1.Module2Session.findByIdAndUpdate(sessionId, {
+                        day_open_prices_json: session.dayOpenPrices
+                    });
+                }
+                catch (err) {
+                    // Ignore DB connection errors in offline mode
+                }
+            }
             // If price from Redis is 0/missing, fallback to previous price
             if (ltp === 0 && strikeState.grid.length > 0) {
                 ltp = strikeState.grid[strikeState.grid.length - 1].ltp;
             }
             else if (ltp === 0) {
-                ltp = strikeState.dayOpen;
+                ltp = strikeState.dayOpen || 100;
             }
             // Update High/Low boundaries
-            strikeState.dayHigh = Math.max(strikeState.dayHigh, ltp);
-            strikeState.dayLow = Math.min(strikeState.dayLow, ltp);
-            strikeState.pctChange = Number((((ltp - strikeState.dayOpen) / strikeState.dayOpen) * 100).toFixed(2));
+            strikeState.dayHigh = Math.max(strikeState.dayHigh || ltp, ltp);
+            strikeState.dayLow = Math.min(strikeState.dayLow || ltp, ltp);
+            const denominator = strikeState.dayOpen || 100;
+            strikeState.pctChange = Number((((ltp - denominator) / denominator) * 100).toFixed(2));
             // 2. Evaluate trend badge
             const previousBadge = strikeState.trendBadge;
             const recentLtpList = strikeState.grid.slice(-4).map(c => c.ltp);
@@ -158,16 +174,21 @@ const executeMinuteBoundary = async () => {
             };
             strikeState.grid.push(cell);
             // 4. Save to Database
-            await Module2StrikeTick_1.Module2StrikeTick.create({
-                session_id: sessionId,
-                strike,
-                minute_timestamp: timestamp,
-                ltp_integer: ltp,
-                is_day_high: cell.isHigh,
-                is_day_low: cell.isLow,
-                pct_from_open: strikeState.pctChange,
-                is_downtrend_flagged: strikeState.isDowntrendActive
-            });
+            try {
+                await Module2StrikeTick_1.Module2StrikeTick.create({
+                    session_id: sessionId,
+                    strike,
+                    minute_timestamp: timestamp,
+                    ltp_integer: ltp,
+                    is_day_high: cell.isHigh,
+                    is_day_low: cell.isLow,
+                    pct_from_open: strikeState.pctChange,
+                    is_downtrend_flagged: strikeState.isDowntrendActive
+                });
+            }
+            catch (err) {
+                // Suppress warning to avoid console spamming when DB is offline
+            }
             // 5. Broadcast to connected clients
             (0, socketService_1.broadcastTrackerUpdate)(sessionId, {
                 strike,
@@ -193,13 +214,13 @@ const startTrackerSession = async (userId, sessionType, indexSymbol, expiryDate,
     const strikes = {};
     for (const strike of selectedStrikes) {
         const rawPrice = await redis_1.default.get(`ltp:${strike}`);
-        const ltp = rawPrice ? Math.floor(parseFloat(rawPrice)) : 100; // default baseline
+        const ltp = rawPrice ? Math.floor(parseFloat(rawPrice)) : 0; // Capture baseline at first observation
         dayOpenPrices[strike] = ltp;
         strikes[strike] = {
             strike,
             dayOpen: ltp,
-            dayHigh: ltp,
-            dayLow: ltp,
+            dayHigh: ltp || 100,
+            dayLow: ltp || 100,
             grid: [],
             trendBadge: "FLAT",
             isDowntrendActive: false,
@@ -208,14 +229,30 @@ const startTrackerSession = async (userId, sessionType, indexSymbol, expiryDate,
         };
     }
     // Create session record in DB
-    const doc = await Module2Session_1.Module2Session.create({
-        user_id: userId,
-        session_type: sessionType,
-        index_symbol: indexSymbol,
-        expiry_date: expiryDate,
-        selected_strikes_json: selectedStrikes,
-        day_open_prices_json: dayOpenPrices
-    });
+    let doc;
+    try {
+        doc = await Module2Session_1.Module2Session.create({
+            user_id: userId,
+            session_type: sessionType,
+            index_symbol: indexSymbol,
+            expiry_date: expiryDate,
+            selected_strikes_json: selectedStrikes,
+            day_open_prices_json: dayOpenPrices
+        });
+    }
+    catch (err) {
+        console.warn("[TrackerEngine] MongoDB offline. Creating temporary mock session in memory.");
+        doc = {
+            _id: "mock_session_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
+            user_id: userId,
+            session_type: sessionType,
+            index_symbol: indexSymbol,
+            expiry_date: expiryDate,
+            selected_strikes_json: selectedStrikes,
+            day_open_prices_json: dayOpenPrices,
+            created_at: new Date()
+        };
+    }
     const sessionData = {
         sessionId: doc._id.toString(),
         userId,
@@ -228,7 +265,7 @@ const startTrackerSession = async (userId, sessionType, indexSymbol, expiryDate,
         createdAt: doc.created_at
     };
     // Add to local active sessions cache
-    activeSessions[doc._id.toString()] = sessionData;
+    exports.activeSessions[doc._id.toString()] = sessionData;
     return sessionData;
 };
 exports.startTrackerSession = startTrackerSession;
@@ -236,7 +273,7 @@ exports.startTrackerSession = startTrackerSession;
  * Swaps strikes dynamically within an active tracking session without losing history for others
  */
 const updateTrackerStrikes = async (sessionId, newStrikes) => {
-    const session = activeSessions[sessionId];
+    const session = exports.activeSessions[sessionId];
     if (!session) {
         throw new Error("Active session not found");
     }
@@ -244,13 +281,13 @@ const updateTrackerStrikes = async (sessionId, newStrikes) => {
     for (const strike of newStrikes) {
         if (!session.selectedStrikes.includes(strike)) {
             const rawPrice = await redis_1.default.get(`ltp:${strike}`);
-            const ltp = rawPrice ? Math.floor(parseFloat(rawPrice)) : 100;
+            const ltp = rawPrice ? Math.floor(parseFloat(rawPrice)) : 0; // Capture baseline at first observation
             session.dayOpenPrices[strike] = ltp;
             session.strikes[strike] = {
                 strike,
                 dayOpen: ltp,
-                dayHigh: ltp,
-                dayLow: ltp,
+                dayHigh: ltp || 100,
+                dayLow: ltp || 100,
                 grid: [],
                 trendBadge: "FLAT",
                 isDowntrendActive: false,
@@ -263,10 +300,15 @@ const updateTrackerStrikes = async (sessionId, newStrikes) => {
     // or clean it up. Keeping it in Mongoose is fine since they are written to DB).
     session.selectedStrikes = newStrikes;
     // Update Database session configuration
-    await Module2Session_1.Module2Session.findByIdAndUpdate(sessionId, {
-        selected_strikes_json: newStrikes,
-        day_open_prices_json: session.dayOpenPrices
-    });
+    try {
+        await Module2Session_1.Module2Session.findByIdAndUpdate(sessionId, {
+            selected_strikes_json: newStrikes,
+            day_open_prices_json: session.dayOpenPrices
+        });
+    }
+    catch (err) {
+        console.warn("[TrackerEngine] DB offline during updateTrackerStrikes. Continuing in-memory.");
+    }
     return session;
 };
 exports.updateTrackerStrikes = updateTrackerStrikes;
@@ -274,7 +316,17 @@ exports.updateTrackerStrikes = updateTrackerStrikes;
  * Resumes an active session from the database (e.g. on server restart)
  */
 const resumeSession = async (sessionId) => {
-    const doc = await Module2Session_1.Module2Session.findById(sessionId);
+    if (sessionId.startsWith("mock_session_")) {
+        return exports.activeSessions[sessionId] || null;
+    }
+    let doc = null;
+    try {
+        doc = await Module2Session_1.Module2Session.findById(sessionId);
+    }
+    catch (err) {
+        console.warn(`[TrackerEngine] DB offline. Failed to resume session ${sessionId}.`);
+        return exports.activeSessions[sessionId] || null;
+    }
     if (!doc)
         return null;
     const strikes = {};
@@ -337,7 +389,7 @@ const resumeSession = async (sessionId) => {
         strikes,
         createdAt: doc.created_at
     };
-    activeSessions[sessionId] = sessionData;
+    exports.activeSessions[sessionId] = sessionData;
     return sessionData;
 };
 exports.resumeSession = resumeSession;
@@ -345,8 +397,8 @@ exports.resumeSession = resumeSession;
  * Gets session data from cache or loads it from DB
  */
 const getSessionData = async (sessionId) => {
-    if (activeSessions[sessionId]) {
-        return activeSessions[sessionId];
+    if (exports.activeSessions[sessionId]) {
+        return exports.activeSessions[sessionId];
     }
     return await (0, exports.resumeSession)(sessionId);
 };

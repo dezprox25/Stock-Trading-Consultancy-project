@@ -7,7 +7,6 @@ exports.Redis = void 0;
 const ioredis_1 = __importDefault(require("ioredis"));
 exports.Redis = ioredis_1.default;
 const redisUrl = process.env.REDIS_URL || "redis://127.0.0.1:6379";
-let redis;
 class MockRedis {
     store = new Map();
     async get(key) {
@@ -32,20 +31,40 @@ class MockRedis {
         return this;
     }
 }
+let activeClient;
 try {
-    redis = new ioredis_1.default(redisUrl, {
-        maxRetriesPerRequest: 1,
+    activeClient = new ioredis_1.default(redisUrl, {
+        maxRetriesPerRequest: null,
         connectTimeout: 1500,
     });
-    redis.on("error", (err) => {
-        if (!(redis instanceof MockRedis)) {
+    activeClient.on("error", (err) => {
+        if (!(activeClient instanceof MockRedis)) {
             console.warn("[Redis] Connection failed. Falling back to local in-memory Mock Redis cache.");
-            redis = new MockRedis();
+            const oldClient = activeClient;
+            activeClient = new MockRedis();
+            try {
+                oldClient.disconnect();
+            }
+            catch (e) {
+                // ignore error during disconnect
+            }
         }
     });
 }
 catch (error) {
     console.warn("[Redis] Initialization failed. Falling back to local in-memory Mock Redis cache.");
-    redis = new MockRedis();
+    activeClient = new MockRedis();
 }
-exports.default = redis;
+// Proxy wrapper to expose the active client dynamically to all modules importing it
+const proxy = new Proxy({}, {
+    get(target, prop, receiver) {
+        const value = activeClient[prop];
+        if (typeof value === "function") {
+            return function (...args) {
+                return value.apply(activeClient, args);
+            };
+        }
+        return value;
+    }
+});
+exports.default = proxy;
