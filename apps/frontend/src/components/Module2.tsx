@@ -597,7 +597,30 @@ export const Module2 = () => {
   const rawSession = hasStrikes ? activeSession : localFallbackSession;
   const currentSession = ensureFullStrikesData(rawSession);
 
-  const maxMinutes = Math.max(0, ...Object.values(currentSession.strikes).map((s: any) => s.grid.length));
+  const sortedTimestamps = (() => {
+    const tsSet = new Set<string>();
+    Object.values(currentSession.strikes).forEach((s: any) => {
+      s.grid.forEach((cell: any) => {
+        if (cell.timestamp) {
+          tsSet.add(cell.timestamp);
+        }
+      });
+    });
+    if (tsSet.size === 0) {
+      const fallback: string[] = [];
+      const startHour = 9;
+      const startMinute = 15;
+      for (let m = 0; m < 16; m++) {
+        let minVal = startMinute + m;
+        let hrVal = startHour + Math.floor(minVal / 60);
+        let minStr = (minVal % 60).toString().padStart(2, "0");
+        let hrStr = hrVal.toString().padStart(2, "0");
+        fallback.push(`${hrStr}:${minStr}`);
+      }
+      return fallback;
+    }
+    return Array.from(tsSet).sort();
+  })();
 
   const topStrikes = Object.values(currentSession.strikes)
     .sort((a: any, b: any) => b.pctChange - a.pctChange)
@@ -889,7 +912,7 @@ export const Module2 = () => {
             <StrikeTrackerTable
               strikesList={ceStrikesList}
               session={currentSession}
-              maxMinutes={maxMinutes}
+              sortedTimestamps={sortedTimestamps}
               highlightTop3={highlightTop3}
               topStrikes={topStrikes}
             />
@@ -906,7 +929,7 @@ export const Module2 = () => {
             <StrikeTrackerTable
               strikesList={peStrikesList}
               session={currentSession}
-              maxMinutes={maxMinutes}
+              sortedTimestamps={sortedTimestamps}
               highlightTop3={highlightTop3}
               topStrikes={topStrikes}
             />
@@ -922,13 +945,13 @@ export const Module2 = () => {
 function StrikeTrackerTable({
   strikesList,
   session,
-  maxMinutes,
+  sortedTimestamps,
   highlightTop3,
   topStrikes
 }: {
   strikesList: string[];
   session: any;
-  maxMinutes: number;
+  sortedTimestamps: string[];
   highlightTop3: boolean;
   topStrikes: string[];
 }) {
@@ -946,29 +969,11 @@ function StrikeTrackerTable({
               <th className="py-3 px-3 text-center border-r border-b border-trading-border min-w-[70px] bg-trading-bg top-0 sticky z-30">
                 Day Open
               </th>
-              {Array.from({ length: maxMinutes }).map((_, m) => {
-                let timeStr = "";
-                for (const strike of Object.keys(session.strikes)) {
-                  const cell = session.strikes[strike].grid.find((c: any) => c.minute === m);
-                  if (cell) {
-                    timeStr = cell.timestamp;
-                    break;
-                  }
-                }
-                if (!timeStr) {
-                  const startHour = 9;
-                  const startMin = 15;
-                  const totalMin = startMin + m;
-                  const hr = startHour + Math.floor(totalMin / 60);
-                  const min = totalMin % 60;
-                  timeStr = `${hr.toString().padStart(2, "0")}:${min.toString().padStart(2, "0")}`;
-                }
-                return (
-                  <th key={m} className="py-3 px-2 text-center font-mono font-medium text-[9px] min-w-[65px] sticky top-0 bg-trading-bg z-30 border-b border-trading-border">
-                    {timeStr}
-                  </th>
-                );
-              })}
+              {sortedTimestamps.map((ts) => (
+                <th key={ts} className="py-3 px-2 text-center font-mono font-medium text-[9px] min-w-[65px] sticky top-0 bg-trading-bg z-30 border-b border-trading-border">
+                  {ts}
+                </th>
+              ))}
               <th className="py-3 px-3 text-center border-l border-r border-b border-trading-border sticky right-[65px] top-0 bg-trading-bg z-40 w-[65px] min-w-[65px]">
                 Day High
               </th>
@@ -980,7 +985,7 @@ function StrikeTrackerTable({
           <tbody className="text-xs font-semibold">
             {strikesList.length === 0 ? (
               <tr>
-                <td colSpan={maxMinutes + 4} className="py-8 text-center text-trading-textMuted border-b border-trading-gridLine">
+                <td colSpan={sortedTimestamps.length + 4} className="py-8 text-center text-trading-textMuted border-b border-trading-gridLine">
                   No strikes to track in this category.
                 </td>
               </tr>
@@ -1092,10 +1097,10 @@ function StrikeTrackerTable({
                     </td>
 
                     {/* Minute-by-Minute Columns */}
-                    {Array.from({ length: maxMinutes }).map((_, m) => {
-                      const cell = s.grid.find((c: any) => c.minute === m);
+                    {sortedTimestamps.map((ts) => {
+                      const cell = s.grid.find((c: any) => c.timestamp === ts);
                       if (!cell) {
-                        return <td key={m} className="py-2 px-2 text-center text-trading-border bg-trading-surface/10 border-b border-trading-gridLine">-</td>;
+                        return <td key={ts} className="py-2 px-2 text-center text-trading-border bg-trading-surface/10 border-b border-trading-gridLine">-</td>;
                       }
 
                       // Highlight all cells matching Day High/Low float values
@@ -1111,7 +1116,7 @@ function StrikeTrackerTable({
 
                       return (
                         <td
-                          key={m}
+                          key={ts}
                           title={`Time: ${cell.timestamp} | Price: ${cell.ltp}`}
                           className={`py-2 px-2 text-center font-mono text-xs border-r border-b border-trading-gridLine transition duration-300 ${cellClass} ${
                             s.isDowntrendActive ? "bg-call-down-stripes" : ""
