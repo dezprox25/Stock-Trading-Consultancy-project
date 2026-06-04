@@ -125,11 +125,6 @@ export const Module1 = () => {
     };
   });
 
-  // Force selectedMethod to classic on mount/load
-  useEffect(() => {
-    setSelectedMethod("classic");
-  }, [setSelectedMethod]);
-
   return (
     <div className="space-y-6">
       {/* Page Title */}
@@ -139,24 +134,24 @@ export const Module1 = () => {
         </h2>
       </div>
 
-      {/* 1. Timeframe Controls ONLY */}
+      {/* Pivot Calculation Method Selector */}
       <div className="flex items-center space-x-2 rounded-xl border border-trading-border bg-trading-surface p-4">
-        <span className="text-xs font-bold uppercase tracking-wider text-trading-textMuted mr-2">Timeframe:</span>
+        <span className="text-xs font-bold uppercase tracking-wider text-trading-textMuted mr-2">Pivot Formula:</span>
         {[
-          { key: "1m", label: "1 Min" },
-          { key: "3m", label: "3 Min" },
-          { key: "5m", label: "5 Min" }
-        ].map((tf) => (
+          { key: "classic", label: "Classic Pivot" },
+          { key: "camarilla", label: "Camarilla Pivot" },
+          { key: "fibonacci", label: "Fibonacci Pivot" }
+        ].map((method) => (
           <button
-            key={tf.key}
-            onClick={() => setSelectedTimeframe(tf.key)}
+            key={method.key}
+            onClick={() => setSelectedMethod(method.key as any)}
             className={`rounded-lg px-4 py-1.5 text-xs font-bold font-sans transition ${
-              selectedTimeframe === tf.key
+              selectedMethod === method.key
                 ? "bg-trading-neutral text-trading-bg"
                 : "bg-trading-bg text-trading-textMuted border border-trading-border hover:text-trading-textActive"
             }`}
           >
-            {tf.label}
+            {method.label}
           </button>
         ))}
       </div>

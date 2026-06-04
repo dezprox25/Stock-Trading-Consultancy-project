@@ -586,7 +586,7 @@ export const Module2 = () => {
       if (prev.includes(strike)) {
         return prev.filter((s) => s !== strike);
       }
-      const maxAllowed = 10;
+      const maxAllowed = sessionType === "mixed" ? 20 : 10;
       if (prev.length >= maxAllowed) return prev;
       return [...prev, strike];
     });
@@ -650,14 +650,114 @@ export const Module2 = () => {
 
   return (
     <div className="space-y-6 max-w-full overflow-hidden">
-      {/* 1. Header & Controls Toolbar */}
-      <div className="flex flex-col gap-4">
-        <div className="flex items-center justify-between border-b border-trading-border pb-4">
-          <h2 className="font-sans text-lg font-black tracking-wider text-trading-textActive uppercase">
-            MODULE 2 - STRIKE TRACKER
-          </h2>
+      {/* Page Title */}
+      <div className="flex items-center justify-between border-b border-trading-border pb-4">
+        <h2 className="font-sans text-lg font-black tracking-wider text-trading-textActive uppercase">
+          MODULE 2 - STRIKE TRACKER
+        </h2>
+      </div>
+
+      {/* 1. Premium Configurations Card */}
+      <div className="rounded-xl border border-trading-border bg-trading-surface p-6 space-y-6 shadow-xl">
+        <h3 className="text-xs font-black tracking-widest text-trading-neutral uppercase select-none">
+          Configure Tracker Session Settings
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div>
+            <label className="block text-xs font-semibold text-trading-textMuted uppercase mb-2">Index symbol</label>
+            <select
+              value={indexSymbol}
+              onChange={(e) => setIndexSymbol(e.target.value)}
+              className="w-full rounded-lg border border-trading-border bg-trading-bg px-4 py-2.5 text-sm focus:outline-none focus:border-trading-neutral text-trading-textActive font-sans"
+            >
+              <option value="NIFTY50">NIFTY 50 (Step 50)</option>
+              <option value="BANKNIFTY">BANK NIFTY (Step 100)</option>
+              <option value="FINNIFTY">FIN NIFTY (Step 50)</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-trading-textMuted uppercase mb-2">Options Expiry</label>
+            <select
+              value={expiryDate}
+              onChange={(e) => setExpiryDate(e.target.value)}
+              className="w-full rounded-lg border border-trading-border bg-trading-bg px-4 py-2.5 text-sm focus:outline-none focus:border-trading-neutral text-trading-textActive font-sans"
+            >
+              <option value="2026-06-04">04-JUN-2026 (Weekly Expiry)</option>
+              <option value="2026-06-11">11-JUN-2026 (Weekly Expiry)</option>
+              <option value="2026-06-25">25-JUN-2026 (Monthly Expiry)</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-trading-textMuted uppercase mb-2">Session Type</label>
+            <div className="flex bg-trading-bg p-1 rounded-lg border border-trading-border">
+              {(["CE", "PE", "mixed"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setSessionType(t)}
+                  className={`flex-1 rounded-md py-1.5 text-xs font-bold font-sans transition ${
+                    sessionType === t ? "bg-trading-neutral text-trading-bg" : "text-trading-textMuted hover:text-trading-textActive"
+                  }`}
+                >
+                  {t.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
+        <div>
+          <span className="block text-xs font-semibold text-trading-textMuted uppercase mb-3">
+            Select strikes from chain ({selectedStrikes.length}/{sessionType === "mixed" ? 20 : 10} selected)
+          </span>
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3 max-h-[150px] overflow-y-auto pr-2 custom-scrollbar">
+            {(chainData?.strikes || []).map((s: any) => {
+              const ceSelected = selectedStrikes.includes(s.CE);
+              const peSelected = selectedStrikes.includes(s.PE);
+
+              return (
+                <div key={s.strikePrice} className="flex flex-col rounded-lg border border-trading-border bg-trading-bg/40 p-2 text-center">
+                  <span className="text-[10px] font-bold text-trading-textMuted font-mono mb-2">{s.strikePrice}</span>
+                  <div className="flex space-x-1">
+                    {sessionType !== "PE" && (
+                      <button
+                        onClick={() => toggleStrikeSelection(s.CE)}
+                        className={`flex-1 rounded py-1 text-[10px] font-black font-sans transition ${
+                          ceSelected ? "bg-emerald-500 text-trading-bg" : "bg-trading-surface text-trading-bullish border border-trading-border hover:bg-trading-border/50"
+                        }`}
+                      >
+                        CE
+                      </button>
+                    )}
+                    {sessionType !== "CE" && (
+                      <button
+                        onClick={() => toggleStrikeSelection(s.PE)}
+                        className={`flex-1 rounded py-1 text-[10px] font-black font-sans transition ${
+                          peSelected ? "bg-red-500 text-trading-bg" : "bg-trading-surface text-trading-bearish border border-trading-border hover:bg-trading-border/50"
+                        }`}
+                      >
+                        PE
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <button
+          onClick={() => startSessionMutation.mutate()}
+          disabled={selectedStrikes.length === 0 || startSessionMutation.isPending}
+          className="rounded-lg bg-trading-neutral px-6 py-2.5 text-xs font-bold font-sans text-trading-bg transition hover:opacity-90 disabled:opacity-50 active:scale-95"
+        >
+          Start Active Session Tracker
+        </button>
+      </div>
+
+      {/* 2. Controls Toolbar */}
+      <div className="flex flex-col gap-4">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 rounded-xl border border-trading-border bg-trading-surface p-4">
           {/* Controls Group */}
           <div className="flex flex-wrap items-center gap-3">
@@ -814,108 +914,7 @@ export const Module2 = () => {
         )}
       </div>
 
-      {/* Setup Options Drawer/Panel (Miniature config helper, tucked away nicely at the bottom) */}
-      <details className="group rounded-xl border border-trading-border bg-trading-surface/40 p-4 transition-all">
-        <summary className="text-xs font-bold text-trading-textMuted hover:text-trading-textActive cursor-pointer select-none uppercase tracking-wider flex items-center justify-between">
-          <span>Configure Tracker Session Settings</span>
-          <span className="transition-transform group-open:rotate-180">▼</span>
-        </summary>
-        <div className="mt-4 pt-4 border-t border-trading-border space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-              <label className="block text-xs font-semibold text-trading-textMuted uppercase mb-2">Index symbol</label>
-              <select
-                value={indexSymbol}
-                onChange={(e) => setIndexSymbol(e.target.value)}
-                className="w-full rounded-lg border border-trading-border bg-trading-bg px-4 py-2.5 text-sm focus:outline-none focus:border-trading-neutral text-trading-textActive font-sans"
-              >
-                <option value="NIFTY50">NIFTY 50 (Step 50)</option>
-                <option value="BANKNIFTY">BANK NIFTY (Step 100)</option>
-                <option value="FINNIFTY">FIN NIFTY (Step 50)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-trading-textMuted uppercase mb-2">Options Expiry</label>
-              <select
-                value={expiryDate}
-                onChange={(e) => setExpiryDate(e.target.value)}
-                className="w-full rounded-lg border border-trading-border bg-trading-bg px-4 py-2.5 text-sm focus:outline-none focus:border-trading-neutral text-trading-textActive font-sans"
-              >
-                <option value="2026-06-04">04-JUN-2026 (Weekly Expiry)</option>
-                <option value="2026-06-11">11-JUN-2026 (Weekly Expiry)</option>
-                <option value="2026-06-25">25-JUN-2026 (Monthly Expiry)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-trading-textMuted uppercase mb-2">Session Type</label>
-              <div className="flex bg-trading-bg p-1 rounded-lg border border-trading-border">
-                {(["CE", "PE", "mixed"] as const).map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setSessionType(t)}
-                    className={`flex-1 rounded-md py-1.5 text-xs font-bold font-sans transition ${
-                      sessionType === t ? "bg-trading-neutral text-white" : "text-trading-textMuted hover:text-trading-textActive"
-                    }`}
-                  >
-                    {t.toUpperCase()}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <span className="block text-xs font-semibold text-trading-textMuted uppercase mb-3">
-              Select strikes from chain ({selectedStrikes.length}/10 selected)
-            </span>
-            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3">
-              {(chainData?.strikes || []).map((s: any) => {
-                const ceSelected = selectedStrikes.includes(s.CE);
-                const peSelected = selectedStrikes.includes(s.PE);
-
-                return (
-                  <div key={s.strikePrice} className="flex flex-col rounded-lg border border-trading-border bg-trading-bg/40 p-2 text-center">
-                    <span className="text-[10px] font-bold text-trading-textMuted font-mono mb-2">{s.strikePrice}</span>
-                    <div className="flex space-x-1">
-                      {sessionType !== "PE" && (
-                        <button
-                          onClick={() => toggleStrikeSelection(s.CE)}
-                          className={`flex-1 rounded py-1 text-[10px] font-black font-sans transition ${
-                            ceSelected ? "bg-emerald-500 text-trading-bg" : "bg-trading-surface text-trading-bullish border border-trading-border hover:bg-trading-border/50"
-                          }`}
-                        >
-                          CE
-                        </button>
-                      )}
-                      {sessionType !== "CE" && (
-                        <button
-                          onClick={() => toggleStrikeSelection(s.PE)}
-                          className={`flex-1 rounded py-1 text-[10px] font-black font-sans transition ${
-                            peSelected ? "bg-red-500 text-trading-bg" : "bg-trading-surface text-trading-bearish border border-trading-border hover:bg-trading-border/50"
-                          }`}
-                        >
-                          PE
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <button
-            onClick={() => startSessionMutation.mutate()}
-            disabled={selectedStrikes.length === 0 || startSessionMutation.isPending}
-            className="rounded-lg bg-trading-neutral px-6 py-2.5 text-xs font-bold font-sans text-white transition hover:opacity-90 disabled:opacity-50"
-          >
-            Start Active Session Tracker
-          </button>
-        </div>
-      </details>
-    </div>
+      </div>
   );
 };
 
@@ -948,8 +947,22 @@ function StrikeTrackerTable({
                 Day Open
               </th>
               {Array.from({ length: maxMinutes }).map((_, m) => {
-                const firstStrikeKey = Object.keys(session.strikes)[0];
-                const timeStr = session.strikes[firstStrikeKey]?.grid[m]?.timestamp || `${m}`;
+                let timeStr = "";
+                for (const strike of Object.keys(session.strikes)) {
+                  const cell = session.strikes[strike].grid.find((c: any) => c.minute === m);
+                  if (cell) {
+                    timeStr = cell.timestamp;
+                    break;
+                  }
+                }
+                if (!timeStr) {
+                  const startHour = 9;
+                  const startMin = 15;
+                  const totalMin = startMin + m;
+                  const hr = startHour + Math.floor(totalMin / 60);
+                  const min = totalMin % 60;
+                  timeStr = `${hr.toString().padStart(2, "0")}:${min.toString().padStart(2, "0")}`;
+                }
                 return (
                   <th key={m} className="py-3 px-2 text-center font-mono font-medium text-[9px] min-w-[65px] sticky top-0 bg-trading-bg z-30 border-b border-trading-border">
                     {timeStr}
@@ -1007,7 +1020,9 @@ function StrikeTrackerTable({
                 return (
                   <tr
                     key={strike}
-                    className={`group transition duration-300 ${rowBgClass}`}
+                    className={`group transition duration-300 ${rowBgClass} ${
+                      s.trendBadge === "REVERSAL" ? "animate-reversal-border" : ""
+                    }`}
                   >
                     {/* Sticky Strike Cell (Read-Only) */}
                     <td className={`py-2 px-3 border-r border-b border-trading-border min-w-[140px] sticky left-0 z-20 ${cellBgClass}`}>
@@ -1078,17 +1093,14 @@ function StrikeTrackerTable({
 
                     {/* Minute-by-Minute Columns */}
                     {Array.from({ length: maxMinutes }).map((_, m) => {
-                      const cell = s.grid[m];
+                      const cell = s.grid.find((c: any) => c.minute === m);
                       if (!cell) {
                         return <td key={m} className="py-2 px-2 text-center text-trading-border bg-trading-surface/10 border-b border-trading-gridLine">-</td>;
                       }
 
-                      // Event-based High / Low highlighting logic
-                      const roundedLtp = Math.round(cell.ltp);
-                      const roundedHigh = Math.round(s.dayHigh);
-                      const roundedLow = Math.round(s.dayLow);
-                      const isCellHigh = roundedHigh !== roundedLow && roundedLtp === roundedHigh;
-                      const isCellLow = roundedHigh !== roundedLow && roundedLtp === roundedLow;
+                      // Highlight all cells matching Day High/Low float values
+                      const isCellHigh = cell.ltp === s.dayHigh && s.dayHigh > 0;
+                      const isCellLow = cell.ltp === s.dayLow && s.dayLow > 0;
 
                       let cellClass = "bg-trading-surface/50 text-trading-textMuted";
                       if (isCellHigh) {
@@ -1105,7 +1117,7 @@ function StrikeTrackerTable({
                             s.isDowntrendActive ? "bg-call-down-stripes" : ""
                           }`}
                         >
-                          {roundedLtp}
+                          {cell.ltp}
                         </td>
                       );
                     })}

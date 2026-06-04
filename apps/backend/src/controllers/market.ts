@@ -271,3 +271,38 @@ export const getOptionChain = async (req: AuthenticatedRequest, res: Response) =
   }
 };
 
+// Update custom timeframe config
+export const updateCustomTimeframe = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { timeframe } = req.body; // e.g. "10m"
+    if (!timeframe || typeof timeframe !== "string" || !timeframe.endsWith("m")) {
+      return res.status(400).json({ error: "Invalid timeframe format. Expected e.g. '10m'" });
+    }
+
+    const minutes = parseInt(timeframe);
+    if (isNaN(minutes) || minutes <= 0) {
+      return res.status(400).json({ error: "Invalid timeframe duration" });
+    }
+
+    // Save custom timeframe to Redis
+    await redis.set("config:custom_timeframe", timeframe);
+    
+    // Clear old custom timeframe database records so they restart cleanly
+    try {
+      await FuturesOHLC.deleteMany({ timeframe });
+      console.log(`[Market] Cleared old OHLC bars for custom timeframe: ${timeframe}`);
+    } catch (dbErr) {
+      // ignore db errors in offline mode
+    }
+
+    return res.status(200).json({
+      message: "Custom timeframe updated successfully",
+      timeframe,
+      minutes
+    });
+  } catch (error) {
+    console.error("Update Custom Timeframe Error:", error);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+

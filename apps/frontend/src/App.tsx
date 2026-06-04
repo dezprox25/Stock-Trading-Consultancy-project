@@ -30,6 +30,8 @@ function TopBar({ user, handleLogout }: { user: any; handleLogout: () => void })
   const [time, setTime] = useState(new Date());
   const theme = useStore((state) => state.theme);
   const toggleTheme = useStore((state) => state.toggleTheme);
+  const selectedTimeframe = useStore((state) => state.selectedTimeframe);
+  const setSelectedTimeframe = useStore((state) => state.setSelectedTimeframe);
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -43,6 +45,24 @@ function TopBar({ user, handleLogout }: { user: any; handleLogout: () => void })
     second: "2-digit"
   });
 
+  const handleCustomTimeframeClick = async () => {
+    const value = window.prompt("Enter custom timeframe in minutes (e.g. 10, 15, 30):", "10");
+    if (value) {
+      const minutes = parseInt(value);
+      if (isNaN(minutes) || minutes <= 0) {
+        alert("Please enter a valid positive number.");
+        return;
+      }
+      const customTf = `${minutes}m`;
+      try {
+        await api.post("/api/market/custom-timeframe", { timeframe: customTf });
+        setSelectedTimeframe(customTf);
+      } catch (err: any) {
+        alert("Failed to configure custom timeframe: " + err.message);
+      }
+    }
+  };
+
   return (
     <header className="flex h-16 items-center justify-between border-b border-trading-border bg-trading-surface px-6 sticky top-0 z-30 select-none">
       <div className="flex items-center space-x-6">
@@ -50,6 +70,39 @@ function TopBar({ user, handleLogout }: { user: any; handleLogout: () => void })
         <div className="flex items-center space-x-2 border-r border-trading-border pr-6">
           <span className="text-xs font-bold text-trading-textMuted uppercase tracking-wider">Time:</span>
           <span className="font-mono text-sm font-extrabold text-trading-neutral">{timeString}</span>
+        </div>
+
+        {/* Timeframe Selector in Header */}
+        <div className="flex items-center space-x-1.5 border-r border-trading-border pr-6">
+          <span className="text-xs font-bold text-trading-textMuted uppercase tracking-wider mr-1">Tf:</span>
+          {[
+            { key: "1m", label: "1M" },
+            { key: "3m", label: "3M" },
+            { key: "5m", label: "5M" }
+          ].map((tf) => (
+            <button
+              key={tf.key}
+              onClick={() => setSelectedTimeframe(tf.key)}
+              className={`rounded px-2.5 py-1 text-xs font-bold font-sans transition ${
+                selectedTimeframe === tf.key
+                  ? "bg-trading-neutral text-trading-bg"
+                  : "bg-trading-bg text-trading-textMuted border border-trading-border hover:text-trading-textActive"
+              }`}
+            >
+              {tf.label}
+            </button>
+          ))}
+          
+          <button
+            onClick={handleCustomTimeframeClick}
+            className={`rounded px-2.5 py-1 text-xs font-bold font-sans transition ${
+              !["1m", "3m", "5m"].includes(selectedTimeframe)
+                ? "bg-trading-neutral text-trading-bg"
+                : "bg-trading-bg text-trading-textMuted border border-trading-border hover:text-trading-textActive"
+            }`}
+          >
+            {!["1m", "3m", "5m"].includes(selectedTimeframe) ? `Custom (${selectedTimeframe})` : "Custom"}
+          </button>
         </div>
 
         {/* Connection Status */}
