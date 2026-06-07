@@ -209,15 +209,17 @@ function App() {
     <BrowserRouter>
       <div className="flex min-h-screen bg-trading-bg text-trading-textActive antialiased selection:bg-trading-neutral selection:text-trading-bg">
         {/* Left Sidebar (Hidden on mobile/tablet) */}
-        <aside className="hidden md:flex fixed inset-y-0 left-0 z-20 w-64 flex-col border-r border-trading-border bg-trading-surface select-none">
-          {/* Logo */}
-          <div className="flex h-16 items-center px-6 border-b border-trading-border gap-3">
-            <span className="text-2xl">📈</span>
-            <span className="font-sans text-lg font-black tracking-widest text-trading-textActive uppercase">
-              TRADEPRO
-            </span>
-          </div>
-          
+<aside className="hidden md:flex fixed inset-y-0 left-0 z-30 w-72 flex-col border-r border-trading-border bg-trading-surface shadow-2xl backdrop-blur-sm">          {/* Logo */}
+         <div className="flex h-20 items-center px-6 border-b border-trading-border">
+  <div>
+    <h1 className="text-xl font-black tracking-widest text-trading-neutral">
+      TRADEPRO
+    </h1>
+    <p className="text-[10px] uppercase tracking-[0.25em] text-trading-textMuted">
+      Trading Analytics Suite
+    </p>
+  </div>
+</div>
           {/* Navigation Links */}
           <nav className="flex-1 space-y-1.5 p-4">
             <NavigationLink to="/dashboard/module-1" label="Module 1 - Pivot Table" icon="📊" />

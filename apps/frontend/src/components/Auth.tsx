@@ -44,13 +44,13 @@ function useFloatingElements(count: number, isDark: boolean): FloatingElement[] 
     const colors = isDark 
       ? ["#00FF88", "#FF3B5C", "#10B981", "#059669", "#94a3b8", "#64748b"]
       : ["#03543e", "#B91C1C", "#064e3b", "#047857", "#334155", "#475569"];
-   const items: FloatingElement[] = Array.from({ length: count }, (_, i) => ({
+    const items: FloatingElement[] = Array.from({ length: count }, (_, i) => ({
       id: i,
       text: pool[Math.floor(Math.random() * pool.length)],
       x: Math.random() * 100,
       y: Math.random() * 100,
       speed: 0.008 + Math.random() * 0.025,
-      // Restored back to your clean, low-profile visibility balance
+      // Aggressively bumped up light theme opacities so they don't wash out
       opacity: isDark ? (0.04 + Math.random() * 0.04) : (0.06 + Math.random() * 0.04),
       direction: Math.random() > 0.5 ? 1 : -1,
       size: 10 + Math.floor(Math.random() * 5),
@@ -304,9 +304,9 @@ export const Auth: React.FC = () => {
 
     setIsLoading(true);
     try {
-      const { data } = await api.post("/auth/login", { email, password }, { skipAuth: true });
+      const response = await api.post("/auth/login", { email, password }, { skipAuth: true });
       setIsSuccess(true);
-      setTimeout(() => setAuth(data.user, data.accessToken), 1400);
+      setTimeout(() => setAuth(response.user, response.accessToken), 1400);
     } catch (err: any) {
       setIsLoading(false);
       const msg = err?.response?.data?.message || "SECURITY BREAKER: Operator rejected or credentials dropped out-of-bounds.";
@@ -720,7 +720,7 @@ export const Auth: React.FC = () => {
                     }}
                   >
                     <div className="flex items-center justify-center gap-2">
-                      <span>ACCESS TERMINAL</span>
+                      <span>LOGIN</span>
                       <span className="text-[10px] opacity-70 font-normal">↵</span>
                     </div>
                     <div className={`btn-streak ${isHovered ? "btn-streak-animate" : ""}`} />
