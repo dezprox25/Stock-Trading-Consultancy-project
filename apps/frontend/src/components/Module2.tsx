@@ -144,30 +144,31 @@ const generateFallbackSession = () => {
 };
 
 // ── Design tokens (from Auth.tsx) ─────────────────────────────────────────────
+// ── Replace the T tokens object at the top of Module2.tsx ────────────────────
 const T = {
   green: "#047857",
   greenGlow: "rgba(4,120,87,0.15)",
   greenLight: "rgba(4,120,87,0.08)",
   greenBorder: "rgba(4,120,87,0.35)",
   greenBorderSoft: "rgba(4,120,87,0.18)",
-  red: "#B91C1C",
+  red: "var(--trading-bearish)",
   redLight: "rgba(185,28,28,0.08)",
   redBorder: "rgba(185,28,28,0.3)",
   amber: "#D97706",
   amberLight: "rgba(217,119,6,0.08)",
-  bg: "#f4f6f9",
-  surface: "rgba(255,255,255,0.97)",
-  inputBg: "rgba(241,245,249,0.95)",
-  textPrimary: "#0f172a",
-  textSecondary: "#334155",
-  textMuted: "#64748b",
-  textFaint: "#94a3b8",
+  // ── All these now use CSS variables ──────────────────────────────────────
+  bg: "var(--trading-bg)",
+  surface: "var(--trading-surface)",
+  inputBg: "var(--trading-bg)",
+  textPrimary: "var(--trading-text-active)",
+  textSecondary: "var(--trading-text-active)",
+  textMuted: "var(--trading-text-muted)",
+  textFaint: "var(--trading-text-muted)",
   border: "rgba(4,120,87,0.18)",
   borderFaint: "rgba(4,120,87,0.1)",
   shadow: "0 4px 24px rgba(4,120,87,0.07)",
   shadowSm: "0 2px 12px rgba(4,120,87,0.05)",
 };
-
 // ── Scope corners from Auth.tsx ───────────────────────────────────────────────
 function ScopeCorners({ color = T.green, size = 8 }: { color?: string; size?: number }) {
   const s = `${size}px`;
@@ -558,18 +559,38 @@ export const Module2 = () => {
         }
         @keyframes m2-pulse-green { 0%,100% { box-shadow: 0 0 0 0 rgba(4,120,87,0.3); } 50% { box-shadow: 0 0 0 4px rgba(4,120,87,0); } }
 
-        .m2-page { font-family: 'Inter', sans-serif; background: #f4f6f9; min-height: 100vh; position: relative; z-index: 2; }
+.m2-page {
+  font-family: 'Inter', sans-serif;
+  background: var(--trading-bg);
+  min-height: 100vh; position: relative; z-index: 2;
+}
         .m2-mono { font-family: 'IBM Plex Mono', monospace; }
         .m2-scan-line { position: fixed; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(4,120,87,0.35), rgba(4,120,87,0.5), rgba(4,120,87,0.35), transparent); animation: m2-scan 10s ease-in-out infinite; pointer-events: none; z-index: 1; }
         .m2-card-enter { animation: m2-enter 0.5s cubic-bezier(0.16,1,0.3,1) both; }
 
-        .m2-th { font-family: 'IBM Plex Mono', monospace; font-size: 9px; font-weight: 700; letter-spacing: 0.25em; text-transform: uppercase; padding: 11px 10px; white-space: nowrap; color: #64748b; background: rgba(248,250,252,0.98); border-bottom: 1px solid rgba(4,120,87,0.1); position: sticky; top: 0; z-index: 2; }
-        .m2-td { font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 9px 10px; white-space: nowrap; border-bottom: 1px solid rgba(4,120,87,0.05); color: #334155; }
-        .m2-tr { animation: m2-row 0.25s ease both; }
+.m2-th {
+  font-family: 'IBM Plex Mono', monospace; font-size: 9px; font-weight: 700;
+  letter-spacing: 0.25em; text-transform: uppercase;
+  padding: 11px 10px; white-space: nowrap;
+  color: var(--trading-text-muted);
+  background: var(--trading-surface);
+  border-bottom: 1px solid rgba(4,120,87,0.1);
+  position: sticky; top: 0; z-index: 2;
+}        
+.m2-td {
+  font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+  padding: 9px 10px; white-space: nowrap;
+  border-bottom: 1px solid rgba(4,120,87,0.05);
+  color: var(--trading-text-active);
+}        .m2-tr { animation: m2-row 0.25s ease both; }
         .m2-tr:hover td { background: rgba(4,120,87,0.025) !important; }
 
-        .m2-strike-chip { display: flex; flex-direction: column; align-items: center; padding: 8px 6px; border-radius: 2px; cursor: pointer; transition: all 0.15s; border: 1px solid rgba(4,120,87,0.12); background: rgba(241,245,249,0.8); }
-        .m2-strike-chip:hover { border-color: rgba(4,120,87,0.35); background: rgba(4,120,87,0.04); }
+.m2-strike-chip {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 8px 6px; border-radius: 2px; cursor: pointer;
+  transition: all 0.15s; border: 1px solid rgba(4,120,87,0.12);
+  background: var(--trading-bg);
+}        .m2-strike-chip:hover { border-color: rgba(4,120,87,0.35); background: rgba(4,120,87,0.04); }
 
         .m2-ce-btn, .m2-pe-btn { flex: 1; padding: 3px 0; border-radius: 2px; font-family: 'IBM Plex Mono', monospace; font-size: 9px; font-weight: 800; letter-spacing: 0.1em; cursor: pointer; transition: all 0.15s; border: 1px solid transparent; }
         .m2-ce-btn { color: #047857; background: rgba(4,120,87,0.06); border-color: rgba(4,120,87,0.2); }
@@ -579,8 +600,14 @@ export const Module2 = () => {
         .m2-pe-btn:hover { background: rgba(185,28,28,0.12); }
         .m2-pe-btn.active { background: #B91C1C; color: #fff; border-color: #B91C1C; box-shadow: 0 1px 8px rgba(185,28,28,0.25); }
 
-        .m2-input { font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; background: rgba(241,245,249,0.95); border: 1px solid rgba(4,120,87,0.3); border-radius: 2px; padding: 5px 10px; outline: none; color: #0f172a; width: 80px; transition: border-color 0.15s; }
-        .m2-input:focus { border-color: #047857; box-shadow: 0 0 8px rgba(4,120,87,0.15); }
+.m2-input {
+  font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600;
+  background: var(--trading-bg);
+  border: 1px solid rgba(4,120,87,0.3); border-radius: 2px;
+  padding: 5px 10px; outline: none;
+  color: var(--trading-text-active);
+  width: 80px; transition: border-color 0.15s;
+}        .m2-input:focus { border-color: #047857; box-shadow: 0 0 8px rgba(4,120,87,0.15); }
         .m2-input::placeholder { color: #94a3b8; }
         input[type=number].m2-input::-webkit-inner-spin-button { -webkit-appearance: none; }
 
@@ -591,8 +618,14 @@ export const Module2 = () => {
         .m2-export { font-family: 'IBM Plex Mono', monospace; font-size: 9px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; padding: 6px 16px; border-radius: 2px; cursor: pointer; border: 1px solid rgba(4,120,87,0.35); background: rgba(4,120,87,0.06); color: #047857; transition: all 0.15s; }
         .m2-export:hover { background: #047857; color: #fff; box-shadow: 0 2px 12px rgba(4,120,87,0.2); }
 
-        .m2-reset { font-family: 'IBM Plex Mono', monospace; font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; padding: 5px 12px; border-radius: 2px; cursor: pointer; border: 1px solid rgba(100,116,139,0.25); background: transparent; color: #64748b; transition: all 0.15s; }
-        .m2-reset:hover { border-color: #0f172a; color: #0f172a; }
+.m2-reset {
+  font-family: 'IBM Plex Mono', monospace; font-size: 9px; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  padding: 5px 12px; border-radius: 2px; cursor: pointer;
+  border: 1px solid var(--trading-border);
+  background: transparent; color: var(--trading-text-muted);
+  transition: all 0.15s;
+}        .m2-reset:hover { border-color: #0f172a; color: #0f172a; }
 
         .m2-deep-loss-row td { background: rgba(185,28,28,0.04) !important; }
         .m2-downtrend-row td { background: rgba(217,119,6,0.04) !important; }
