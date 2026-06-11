@@ -229,3 +229,118 @@ textarea {
   border-color: rgba(239, 68, 68, 0.35);
   background: rgba(239, 68, 68, 0.06);
 }
+
+/* Collapsible Sidebar Animation System */
+.sidebar-aside {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 30;
+  width: 240px;
+  flex-direction: column;
+  background: var(--trading-surface);
+  border-right: 1.5px solid var(--trading-border);
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.05);
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+@media (min-width: 768px) {
+  .sidebar-aside.collapsed {
+    width: 0;
+    transform: translateX(-240px);
+    opacity: 0;
+    pointer-events: none;
+    border-right-color: transparent;
+    box-shadow: none;
+  }
+}
+
+.main-layout {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-width: 0;
+  padding-left: 0;
+  transition: padding-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (min-width: 768px) {
+  .main-layout {
+    padding-left: 240px;
+  }
+  
+  .main-layout.collapsed {
+    padding-left: 0;
+  }
+}
+
+/* Premium Sidebar Toggle Button */
+.sidebar-toggle-btn {
+  background: transparent;
+  border: 1.5px solid var(--trading-border);
+  border-radius: 6px;
+  padding: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--trading-text-muted);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-toggle-btn:hover {
+  background: rgba(4, 120, 87, 0.08);
+  color: var(--trading-neutral);
+  border-color: rgba(4, 120, 87, 0.35);
+}
+
+.dark .sidebar-toggle-btn:hover {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--trading-neutral);
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+/* Collapsible Split View Layout System */
+.split-view-container {
+  display: flex;
+  flex-direction: row;
+  gap: 16px;
+  padding: 16px;
+  width: 100%;
+  min-height: calc(100vh - 60px);
+  background: var(--trading-bg);
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (max-width: 1200px) {
+  .split-view-container {
+    flex-direction: column;
+    overflow: visible;
+  }
+}
+
+.split-panel {
+  flex: 1;
+  min-width: 0;
+  background: var(--trading-surface);
+  border: 1.5px solid var(--trading-border);
+  border-radius: 14px;
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.05);
+  overflow-y: auto;
+  max-height: calc(100vh - 92px);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (max-width: 1200px) {
+  .split-panel {
+    max-height: none;
+    overflow-y: visible;
+  }
+}
+
