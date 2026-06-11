@@ -7,9 +7,7 @@ import { api } from "../utils/api";
 
 const parseStrikeSymbol = (symbol: string) => {
   const match = symbol.match(/(\d+)(CE|PE)$/);
-  if (match) {
-    return { strikePrice: match[1], optionType: match[2] };
-  }
+  if (match) return { strikePrice: match[1], optionType: match[2] };
   return { strikePrice: symbol, optionType: "" };
 };
 
@@ -22,8 +20,7 @@ const calculateMockTrendAndWarnings = (s: any) => {
   const recentLtpList = grid.slice(-5).map((c: any) => c.ltp);
   let newBadge: "H_TO_L" | "L_TO_H" | "FLAT" | "REVERSAL" = "FLAT";
   if (recentLtpList.length >= 5) {
-    let higherHighs = 0;
-    let lowerLows = 0;
+    let higherHighs = 0; let lowerLows = 0;
     for (let i = 1; i < recentLtpList.length; i++) {
       if (recentLtpList[i] > recentLtpList[i - 1]) higherHighs++;
       if (recentLtpList[i] < recentLtpList[i - 1]) lowerLows++;
@@ -43,12 +40,10 @@ const calculateMockTrendAndWarnings = (s: any) => {
     const recent3 = grid.slice(-3).map((c: any) => c.ltp);
     if (recent3.length >= 3 && recent3[0] > recent3[1] && recent3[1] > recent3[2]) s.isDowntrendActive = true;
     if (recent3.length >= 3 && recent3[recent3.length - 1] > recent3[recent3.length - 2] && recent3[recent3.length - 2] > recent3[recent3.length - 3]) {
-      s.isDowntrendActive = false;
-      s.isDeepLoss = false;
+      s.isDowntrendActive = false; s.isDeepLoss = false;
     }
   } else {
-    s.isDowntrendActive = false;
-    s.isDeepLoss = false;
+    s.isDowntrendActive = false; s.isDeepLoss = false;
   }
 };
 
@@ -59,57 +54,55 @@ const ensureFullStrikesData = (session: any) => {
   const defaultCeStrikes = ["NIFTY21850CE","NIFTY21900CE","NIFTY21950CE","NIFTY22000CE","NIFTY22050CE","NIFTY22100CE","NIFTY22150CE","NIFTY22200CE","NIFTY22250CE","NIFTY22300CE"];
   const defaultPeStrikes = ["NIFTY21850PE","NIFTY21900PE","NIFTY21950PE","NIFTY22000PE","NIFTY22050PE","NIFTY22100PE","NIFTY22150PE","NIFTY22200PE","NIFTY22250PE","NIFTY22300PE"];
   let currentSelected = [...nextSession.selectedStrikes];
-  const ceSelected = currentSelected.filter((s) => s.endsWith("CE"));
-  const peSelected = currentSelected.filter((s) => s.endsWith("PE"));
+  const ceSelected = currentSelected.filter((s: string) => s.endsWith("CE"));
+  const peSelected = currentSelected.filter((s: string) => s.endsWith("PE"));
   const isTinyCustom = currentSelected.length === 1 || currentSelected.length === 2;
   if (!isTinyCustom) {
     const maxCeCount = nextSession.sessionType === "mixed" ? 5 : 10;
     if (nextSession.sessionType === "CE" || nextSession.sessionType === "mixed") {
       let ceCount = ceSelected.length;
       for (let i = 0; i < defaultCeStrikes.length && ceCount < maxCeCount; i++) {
-        const defaultStrike = defaultCeStrikes[i];
-        if (!currentSelected.includes(defaultStrike)) { currentSelected.push(defaultStrike); ceCount++; }
+        const d = defaultCeStrikes[i];
+        if (!currentSelected.includes(d)) { currentSelected.push(d); ceCount++; }
       }
     }
     const maxPeCount = nextSession.sessionType === "mixed" ? 5 : 10;
     if (nextSession.sessionType === "PE" || nextSession.sessionType === "mixed") {
       let peCount = peSelected.length;
       for (let i = 0; i < defaultPeStrikes.length && peCount < maxPeCount; i++) {
-        const defaultStrike = defaultPeStrikes[i];
-        if (!currentSelected.includes(defaultStrike)) { currentSelected.push(defaultStrike); peCount++; }
+        const d = defaultPeStrikes[i];
+        if (!currentSelected.includes(d)) { currentSelected.push(d); peCount++; }
       }
     }
   }
   if (currentSelected.length > 10) currentSelected = currentSelected.slice(0, 10);
   nextSession.selectedStrikes = currentSelected;
   const baselines: Record<string, number> = {
-    "NIFTY21850CE": 180.0,"NIFTY21900CE": 150.0,"NIFTY21950CE": 120.0,"NIFTY22000CE": 95.0,"NIFTY22050CE": 75.0,
-    "NIFTY22100CE": 55.0,"NIFTY22150CE": 40.0,"NIFTY22200CE": 30.0,"NIFTY22250CE": 20.0,"NIFTY22300CE": 12.0,
-    "NIFTY21850PE": 15.0,"NIFTY21900PE": 22.0,"NIFTY21950PE": 32.0,"NIFTY22000PE": 45.0,"NIFTY22050PE": 65.0,
-    "NIFTY22100PE": 88.0,"NIFTY22150PE": 115.0,"NIFTY22200PE": 145.0,"NIFTY22250PE": 180.0,"NIFTY22300PE": 220.0
+    "NIFTY21850CE": 180,"NIFTY21900CE": 150,"NIFTY21950CE": 120,"NIFTY22000CE": 95,"NIFTY22050CE": 75,
+    "NIFTY22100CE": 55,"NIFTY22150CE": 40,"NIFTY22200CE": 30,"NIFTY22250CE": 20,"NIFTY22300CE": 12,
+    "NIFTY21850PE": 15,"NIFTY21900PE": 22,"NIFTY21950PE": 32,"NIFTY22000PE": 45,"NIFTY22050PE": 65,
+    "NIFTY22100PE": 88,"NIFTY22150PE": 115,"NIFTY22200PE": 145,"NIFTY22250PE": 180,"NIFTY22300PE": 220,
   };
-  currentSelected.forEach((strike) => {
+  currentSelected.forEach((strike: string) => {
     if (!nextSession.strikes[strike]) {
-      const base = baselines[strike] || 100.0;
-      let maxMinutes = 0;
-      let existingGrid: any[] = [];
+      const base = baselines[strike] || 100;
+      let maxMinutes = 0; let existingGrid: any[] = [];
       Object.values(nextSession.strikes).forEach((s: any) => {
         if (s.grid && s.grid.length > maxMinutes) { maxMinutes = s.grid.length; existingGrid = s.grid; }
       });
       let grid: any[] = [];
       if (maxMinutes > 0) {
-        grid = existingGrid.map((cell) => ({ ltp: base, minute: cell.minute, timestamp: cell.timestamp, isHigh: false, isLow: false }));
+        grid = existingGrid.map((cell: any) => ({ ltp: base, minute: cell.minute, timestamp: cell.timestamp, isHigh: false, isLow: false }));
       } else {
-        const columnsCount = 16; const startHour = 9; const startMinute = 15; let currentLtp = base;
-        for (let m = 0; m < columnsCount; m++) {
-          let minVal = startMinute + m; let hrVal = startHour + Math.floor(minVal / 60);
-          let minStr = (minVal % 60).toString().padStart(2, "0"); let hrStr = hrVal.toString().padStart(2, "0");
-          const timestamp = `${hrStr}:${minStr}`; const change = (Math.random() - 0.5) * 4;
-          currentLtp = Math.max(1, Number((currentLtp + change).toFixed(2)));
+        let currentLtp = base;
+        for (let m = 0; m < 16; m++) {
+          let minVal = 15 + m; let hrVal = 9 + Math.floor(minVal / 60);
+          const timestamp = `${hrVal.toString().padStart(2, "0")}:${(minVal % 60).toString().padStart(2, "0")}`;
+          currentLtp = Math.max(1, Number((currentLtp + (Math.random() - 0.5) * 4).toFixed(2)));
           grid.push({ ltp: currentLtp, minute: m, timestamp, isHigh: false, isLow: false });
         }
       }
-      nextSession.strikes[strike] = { strike, dayOpen: base, dayHigh: base, dayLow: base, grid, trendBadge: "FLAT" as const, isDowntrendActive: false, isDeepLoss: false, pctChange: 0 };
+      nextSession.strikes[strike] = { strike, dayOpen: base, dayHigh: base, dayLow: base, grid, trendBadge: "FLAT", isDowntrendActive: false, isDeepLoss: false, pctChange: 0 };
       calculateMockTrendAndWarnings(nextSession.strikes[strike]);
     }
   });
@@ -120,79 +113,40 @@ const generateFallbackSession = () => {
   const selectedStrikes = ["NIFTY22000CE","NIFTY22050CE","NIFTY22100CE","NIFTY22150CE","NIFTY22200CE","NIFTY22000PE","NIFTY22050PE","NIFTY22100PE","NIFTY22150PE","NIFTY22200PE"];
   const strikes: Record<string, any> = {};
   const baselines: Record<string, number> = {
-    "NIFTY21850CE": 180.0,"NIFTY21900CE": 150.0,"NIFTY21950CE": 120.0,"NIFTY22000CE": 95.0,"NIFTY22050CE": 75.0,
-    "NIFTY22100CE": 55.0,"NIFTY22150CE": 40.0,"NIFTY22200CE": 30.0,"NIFTY22250CE": 20.0,"NIFTY22300CE": 12.0,
-    "NIFTY21850PE": 15.0,"NIFTY21900PE": 22.0,"NIFTY21950PE": 32.0,"NIFTY22000PE": 45.0,"NIFTY22050PE": 65.0,
-    "NIFTY22100PE": 88.0,"NIFTY22150PE": 115.0,"NIFTY22200PE": 145.0,"NIFTY22250PE": 180.0,"NIFTY22300PE": 220.0
+    "NIFTY21850CE": 180,"NIFTY21900CE": 150,"NIFTY21950CE": 120,"NIFTY22000CE": 95,"NIFTY22050CE": 75,
+    "NIFTY22100CE": 55,"NIFTY22150CE": 40,"NIFTY22200CE": 30,"NIFTY22250CE": 20,"NIFTY22300CE": 12,
+    "NIFTY21850PE": 15,"NIFTY21900PE": 22,"NIFTY21950PE": 32,"NIFTY22000PE": 45,"NIFTY22050PE": 65,
+    "NIFTY22100PE": 88,"NIFTY22150PE": 115,"NIFTY22200PE": 145,"NIFTY22250PE": 180,"NIFTY22300PE": 220,
   };
-  const columnsCount = 16; const startHour = 9; const startMinute = 15;
   selectedStrikes.forEach((strike) => {
-    const base = baselines[strike] || 100.0; const grid: any[] = [];
-    let currentLtp = base; let dayHigh = base; let dayLow = base;
-    for (let m = 0; m < columnsCount; m++) {
-      let minVal = startMinute + m; let hrVal = startHour + Math.floor(minVal / 60);
-      let minStr = (minVal % 60).toString().padStart(2, "0"); let hrStr = hrVal.toString().padStart(2, "0");
-      const timestamp = `${hrStr}:${minStr}`; const change = (Math.random() - 0.5) * 4;
-      currentLtp = Math.max(1, Number((currentLtp + change).toFixed(2)));
+    const base = baselines[strike] || 100;
+    const grid: any[] = []; let currentLtp = base; let dayHigh = base; let dayLow = base;
+    for (let m = 0; m < 16; m++) {
+      let minVal = 15 + m; let hrVal = 9 + Math.floor(minVal / 60);
+      const timestamp = `${hrVal.toString().padStart(2, "0")}:${(minVal % 60).toString().padStart(2, "0")}`;
+      currentLtp = Math.max(1, Number((currentLtp + (Math.random() - 0.5) * 4).toFixed(2)));
       dayHigh = Math.max(dayHigh, currentLtp); dayLow = Math.min(dayLow, currentLtp);
       grid.push({ ltp: currentLtp, minute: m, timestamp, isHigh: false, isLow: false });
     }
-    strikes[strike] = { strike, dayOpen: base, dayHigh, dayLow, grid, trendBadge: "FLAT" as const, isDowntrendActive: false, isDeepLoss: false, pctChange: Number((((currentLtp - base) / base) * 100).toFixed(2)) };
+    strikes[strike] = { strike, dayOpen: base, dayHigh, dayLow, grid, trendBadge: "FLAT", isDowntrendActive: false, isDeepLoss: false, pctChange: Number((((currentLtp - base) / base) * 100).toFixed(2)) };
     calculateMockTrendAndWarnings(strikes[strike]);
   });
-  return { sessionId: "fallback-session", userId: "guest", sessionType: "mixed" as const, indexSymbol: "NIFTY50", expiryDate: "2026-06-04", selectedStrikes, dayOpenPrices: baselines, strikes, createdAt: new Date() };
+  return { sessionId: "fallback-session", userId: "guest", sessionType: "mixed", indexSymbol: "NIFTY50", expiryDate: "2026-06-04", selectedStrikes, dayOpenPrices: baselines, strikes, createdAt: new Date() };
 };
 
-// ── Design tokens (from Auth.tsx) ─────────────────────────────────────────────
-// ── Replace the T tokens object at the top of Module2.tsx ────────────────────
-const T = {
-  green: "#047857",
-  greenGlow: "rgba(4,120,87,0.15)",
-  greenLight: "rgba(4,120,87,0.08)",
-  greenBorder: "rgba(4,120,87,0.35)",
-  greenBorderSoft: "rgba(4,120,87,0.18)",
-  red: "var(--trading-bearish)",
-  redLight: "rgba(185,28,28,0.08)",
-  redBorder: "rgba(185,28,28,0.3)",
-  amber: "#D97706",
-  amberLight: "rgba(217,119,6,0.08)",
-  // ── All these now use CSS variables ──────────────────────────────────────
-  bg: "var(--trading-bg)",
-  surface: "var(--trading-surface)",
-  inputBg: "var(--trading-bg)",
-  textPrimary: "var(--trading-text-active)",
-  textSecondary: "var(--trading-text-active)",
-  textMuted: "var(--trading-text-muted)",
-  textFaint: "var(--trading-text-muted)",
-  border: "rgba(4,120,87,0.18)",
-  borderFaint: "rgba(4,120,87,0.1)",
-  shadow: "0 4px 24px rgba(4,120,87,0.07)",
-  shadowSm: "0 2px 12px rgba(4,120,87,0.05)",
-};
-// ── Scope corners from Auth.tsx ───────────────────────────────────────────────
-function ScopeCorners({ color = T.green, size = 8 }: { color?: string; size?: number }) {
-  const s = `${size}px`;
-  return (
-    <>
-      <span className="absolute top-0 left-0" style={{ width: s, height: "1px", background: color }} />
-      <span className="absolute top-0 left-0" style={{ width: "1px", height: s, background: color }} />
-      <span className="absolute top-0 right-0" style={{ width: s, height: "1px", background: color }} />
-      <span className="absolute top-0 right-0" style={{ width: "1px", height: s, background: color }} />
-      <span className="absolute bottom-0 left-0" style={{ width: s, height: "1px", background: color }} />
-      <span className="absolute bottom-0 left-0" style={{ width: "1px", height: s, background: color }} />
-      <span className="absolute bottom-0 right-0" style={{ width: s, height: "1px", background: color }} />
-      <span className="absolute bottom-0 right-0" style={{ width: "1px", height: s, background: color }} />
-    </>
-  );
-}
+// ── Design tokens ─────────────────────────────────────────────────────────────
+const GREEN = "#047857";
+const RED = "#E53935";
+const AMBER = "#D97706";
 
-// ── Trend badge ───────────────────────────────────────────────────────────────
+// ── Shared sub-components ─────────────────────────────────────────────────────
+
 function TrendBadge({ badge }: { badge: string }) {
   const cfg: Record<string, { label: string; color: string; bg: string; border: string; pulse?: boolean }> = {
-    L_TO_H: { label: "L→H ▲", color: T.green, bg: T.greenLight, border: T.greenBorderSoft, pulse: false },
-    H_TO_L: { label: "H→L ▼", color: T.red, bg: T.redLight, border: T.redBorder, pulse: true },
-    REVERSAL: { label: "REV ⚡", color: T.amber, bg: T.amberLight, border: "rgba(217,119,6,0.3)", pulse: true },
-    FLAT: { label: "FLAT", color: T.textMuted, bg: "rgba(100,116,139,0.06)", border: "rgba(100,116,139,0.2)" },
+    L_TO_H:   { label: "L→H ▲", color: GREEN, bg: "rgba(4,120,87,0.1)",   border: "rgba(4,120,87,0.25)" },
+    H_TO_L:   { label: "H→L ▼", color: RED,   bg: "rgba(229,57,53,0.1)",  border: "rgba(229,57,53,0.25)", pulse: true },
+    REVERSAL: { label: "REV ⚡", color: AMBER, bg: "rgba(217,119,6,0.1)",  border: "rgba(217,119,6,0.25)", pulse: true },
+    FLAT:     { label: "FLAT",   color: "#64748b", bg: "rgba(100,116,139,0.08)", border: "rgba(100,116,139,0.2)" },
   };
   const c = cfg[badge] || cfg.FLAT;
   return (
@@ -200,9 +154,9 @@ function TrendBadge({ badge }: { badge: string }) {
       className={c.pulse ? "animate-pulse" : ""}
       style={{
         display: "inline-flex", alignItems: "center",
-        padding: "2px 7px", borderRadius: "2px",
-        fontSize: 9, fontFamily: "'IBM Plex Mono', monospace",
-        fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase",
+        padding: "2px 8px", borderRadius: 6,
+        fontSize: 10, fontFamily: "'Inter', sans-serif",
+        fontWeight: 700, letterSpacing: "0.03em",
         color: c.color, background: c.bg, border: `1px solid ${c.border}`,
       }}
     >
@@ -211,38 +165,29 @@ function TrendBadge({ badge }: { badge: string }) {
   );
 }
 
-// ── Segmented control ─────────────────────────────────────────────────────────
-function SegmentedControl<T extends string>({
-  options, value, onChange, size = "sm"
+function SegmentedControl<K extends string>({
+  options, value, onChange, size = "sm",
 }: {
-  options: { key: T; label: string }[];
-  value: T;
-  onChange: (v: T) => void;
+  options: { key: K; label: string }[];
+  value: K;
+  onChange: (v: K) => void;
   size?: "sm" | "xs";
 }) {
   return (
-    <div
-      style={{
-        display: "inline-flex", gap: 2, padding: 3,
-        background: T.inputBg, border: `1px solid ${T.border}`,
-        borderRadius: 2,
-      }}
-    >
+    <div style={{ display: "inline-flex", gap: 3, padding: 3, background: "var(--trading-bg)", border: "1.5px solid var(--trading-border)", borderRadius: 8 }}>
       {options.map((o) => (
         <button
           key={o.key}
           onClick={() => onChange(o.key)}
           style={{
-            padding: size === "xs" ? "3px 10px" : "5px 14px",
-            borderRadius: 2, border: "1px solid transparent",
-            fontFamily: "'IBM Plex Mono', monospace",
-            fontSize: size === "xs" ? 9 : 10,
-            fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase",
+            padding: size === "xs" ? "4px 10px" : "6px 14px",
+            borderRadius: 6, border: "none",
+            fontFamily: "'Inter', sans-serif",
+            fontSize: size === "xs" ? 11 : 12, fontWeight: 700,
             cursor: "pointer", transition: "all 0.15s",
-            background: value === o.key ? T.green : "transparent",
-            color: value === o.key ? "#fff" : T.textMuted,
-            borderColor: value === o.key ? T.green : "transparent",
-            boxShadow: value === o.key ? `0 1px 8px ${T.greenGlow}` : "none",
+            background: value === o.key ? GREEN : "transparent",
+            color: value === o.key ? "#fff" : "var(--trading-text-muted)",
+            boxShadow: value === o.key ? "0 1px 6px rgba(4,120,87,0.25)" : "none",
           }}
         >
           {o.label}
@@ -252,73 +197,48 @@ function SegmentedControl<T extends string>({
   );
 }
 
-// ── Premium card wrapper ──────────────────────────────────────────────────────
-function Card({ children, style, className = "" }: { children: React.ReactNode; style?: React.CSSProperties; className?: string }) {
-  return (
-    <div
-      className={`relative overflow-hidden ${className}`}
-      style={{
-        background: T.surface,
-        border: `1.5px solid ${T.border}`,
-        borderRadius: 2,
-        boxShadow: T.shadow,
-        ...style,
-      }}
-    >
-      <ScopeCorners size={8} />
-      <div className="absolute top-0 left-0 right-0 h-[1.5px]" style={{ background: `linear-gradient(90deg, transparent, ${T.green}50, transparent)` }} />
-      {children}
-    </div>
-  );
-}
-
-// ── Premium select ────────────────────────────────────────────────────────────
-function PremiumSelect({ label, value, onChange, options }: {
-  label: string;
-  value: string;
+function SelectField({ label, value, onChange, options }: {
+  label: string; value: string;
   onChange: (v: string) => void;
   options: { value: string; label: string }[];
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <label style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, fontWeight: 700, letterSpacing: "0.3em", textTransform: "uppercase", color: T.textMuted }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <label style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 600, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
         {label}
       </label>
-      <div className="relative">
+      <div style={{ position: "relative" }}>
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
           style={{
             width: "100%", padding: "9px 32px 9px 12px",
-            fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, fontWeight: 600,
-            color: T.textPrimary, background: T.inputBg,
-            border: `1px solid ${T.greenBorder}`, borderRadius: 2,
-            outline: "none", cursor: "pointer", appearance: "none",
-            WebkitAppearance: "none",
+            fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 500,
+            color: "var(--trading-text-active)", background: "var(--trading-bg)",
+            border: "1.5px solid var(--trading-border)", borderRadius: 8,
+            outline: "none", cursor: "pointer", appearance: "none", WebkitAppearance: "none",
           }}
         >
           {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
-        <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: T.green, pointerEvents: "none", fontSize: 10 }}>▾</span>
+        <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: GREEN, pointerEvents: "none", fontSize: 12 }}>▾</span>
       </div>
     </div>
   );
 }
 
-// ── Filter chip ───────────────────────────────────────────────────────────────
-function FilterChip({ label, active, onClick, color = T.green }: { label: string; active: boolean; onClick: () => void; color?: string }) {
+function FilterChip({ label, active, onClick, color = GREEN }: { label: string; active: boolean; onClick: () => void; color?: string }) {
   return (
     <button
       onClick={onClick}
       style={{
-        padding: "4px 12px", borderRadius: 2,
-        fontFamily: "'IBM Plex Mono', monospace", fontSize: 9,
-        fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase",
-        cursor: "pointer", border: `1px solid ${active ? color : "rgba(100,116,139,0.2)"}`,
+        padding: "5px 14px", borderRadius: 8,
+        fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600,
+        cursor: "pointer",
+        border: `1.5px solid ${active ? color : "var(--trading-border)"}`,
         background: active ? `${color}12` : "transparent",
-        color: active ? color : T.textMuted,
+        color: active ? color : "var(--trading-text-muted)",
         transition: "all 0.15s",
-        boxShadow: active ? `0 0 8px ${color}20` : "none",
       }}
     >
       {label}
@@ -326,27 +246,10 @@ function FilterChip({ label, active, onClick, color = T.green }: { label: string
   );
 }
 
-// ── Grid background (matches Auth.tsx) ────────────────────────────────────────
-function GridBackground() {
-  return (
-    <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 0 }}>
-      <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" style={{ position: "absolute", inset: 0 }}>
-        <defs>
-          <pattern id="m2grid" width="60" height="60" patternUnits="userSpaceOnUse">
-            <path d="M 60 0 L 0 0 0 60" fill="none" stroke="rgba(4,120,87,0.06)" strokeWidth="0.5"/>
-          </pattern>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#m2grid)" />
-        <circle cx="70%" cy="30%" r="25%" fill="none" stroke="rgba(4,120,87,0.03)" strokeWidth="1"/>
-      </svg>
-    </div>
-  );
-}
-
-// ── Main component ────────────────────────────────────────────────────────────
+// ── Module 2 ──────────────────────────────────────────────────────────────────
 export const Module2 = () => {
-  const activeSession = useStore((state) => state.activeSession);
-  const setActiveSession = useStore((state) => state.setActiveSession);
+  const activeSession = useStore((s) => s.activeSession);
+  const setActiveSession = useStore((s) => s.setActiveSession);
   const [localFallbackSession, setLocalFallbackSession] = useState<any>(() => generateFallbackSession());
 
   const [indexSymbol, setIndexSymbol] = useState("NIFTY50");
@@ -363,20 +266,20 @@ export const Module2 = () => {
   const { data: chainData } = useQuery({
     queryKey: ["option-chain", indexSymbol],
     queryFn: () => api.get(`/api/market/option-chain/${indexSymbol}`),
-    enabled: true
+    enabled: true,
   });
 
   const { data: initialSession } = useQuery({
     queryKey: ["active-session-init"],
     queryFn: () => api.get("/api/module2/session/current"),
-    enabled: !activeSession
+    enabled: !activeSession,
   });
 
   useEffect(() => {
     if (initialSession) setActiveSession(initialSession);
   }, [initialSession, setActiveSession]);
 
-  const prices = useStore((state) => state.prices);
+  const prices = useStore((s) => s.prices);
 
   useEffect(() => {
     if (activeSession) return;
@@ -394,8 +297,7 @@ export const Module2 = () => {
             if (livePriceObj && livePriceObj.ltp > 0) {
               if (lastCell.ltp !== livePriceObj.ltp) { newLtp = livePriceObj.ltp; updated = true; }
             } else {
-              const change = (Math.random() - 0.5) * 1.5;
-              newLtp = Math.max(1, Number((lastCell.ltp + change).toFixed(2))); updated = true;
+              newLtp = Math.max(1, Number((lastCell.ltp + (Math.random() - 0.5) * 1.5).toFixed(2))); updated = true;
             }
             if (newLtp !== lastCell.ltp) {
               lastCell.ltp = newLtp; s.dayHigh = Math.max(s.dayHigh, newLtp); s.dayLow = Math.min(s.dayLow, newLtp);
@@ -415,8 +317,8 @@ export const Module2 = () => {
     const interval = setInterval(() => {
       setLocalFallbackSession((prev: any) => {
         const next = JSON.parse(JSON.stringify(prev));
-        const firstStrikeKey = Object.keys(next.strikes)[0];
-        const lastCell = next.strikes[firstStrikeKey]?.grid[next.strikes[firstStrikeKey].grid.length - 1];
+        const firstKey = Object.keys(next.strikes)[0];
+        const lastCell = next.strikes[firstKey]?.grid[next.strikes[firstKey].grid.length - 1];
         let nextMinute = 0; let nextTimestamp = "09:31";
         if (lastCell) {
           const [h, m] = lastCell.timestamp.split(":").map(Number);
@@ -439,7 +341,7 @@ export const Module2 = () => {
 
   const startSessionMutation = useMutation({
     mutationFn: () => api.post("/api/module2/session/start", { sessionType, indexSymbol, expiryDate, selectedStrikes }),
-    onSuccess: (data) => setActiveSession(data)
+    onSuccess: (data) => setActiveSession(data),
   });
 
   const handleExportCSV = async () => {
@@ -449,35 +351,35 @@ export const Module2 = () => {
       try {
         let maxMinutes = 0;
         Object.values(sessionToExport.strikes).forEach((s: any) => { maxMinutes = Math.max(maxMinutes, s.grid.length); });
-        const headers = ["Strike", "Day Open", "Day High", "Day Low", "Trend Badge", "Pct Change"];
         const firstStrikeKey = Object.keys(sessionToExport.strikes)[0];
         const firstStrike = firstStrikeKey ? sessionToExport.strikes[firstStrikeKey] : null;
+        const headers = ["Strike", "Day Open", "Day High", "Day Low", "Trend Badge", "Pct Change"];
         for (let m = 0; m < maxMinutes; m++) { headers.push(firstStrike?.grid[m]?.timestamp || `Min ${m}`); }
-        let csvContent = headers.join(",") + "\n";
+        let csv = headers.join(",") + "\n";
         sessionToExport.selectedStrikes.forEach((strike: string) => {
           const s = sessionToExport.strikes[strike];
           if (!s) return;
           const row = [strike, Math.round(s.dayOpen), Math.round(s.dayHigh), Math.round(s.dayLow), s.trendBadge, `${s.pctChange}%`];
           for (let m = 0; m < maxMinutes; m++) {
             const cell = s.grid[m];
-            if (cell) { let val = Math.round(cell.ltp).toString(); if (cell.isHigh) val += " (H)"; if (cell.isLow) val += " (L)"; row.push(val); }
+            if (cell) { let v = Math.round(cell.ltp).toString(); if (cell.isHigh) v += " (H)"; if (cell.isLow) v += " (L)"; row.push(v); }
             else row.push("");
           }
-          csvContent += row.join(",") + "\n";
+          csv += row.join(",") + "\n";
         });
-        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
         const url = URL.createObjectURL(blob); const a = document.createElement("a");
         a.href = url; a.download = "session_mock_export.csv"; document.body.appendChild(a); a.click();
         document.body.removeChild(a); URL.revokeObjectURL(url);
-      } catch (err) { console.error("Client-side CSV export failed:", err); }
+      } catch (err) { console.error("CSV export failed:", err); }
       return;
     }
     try {
-      const csvBlob = await fetch("/api/module2/export", { headers: { Authorization: `Bearer ${useStore.getState().accessToken}` } }).then(r => r.blob());
-      const url = window.URL.createObjectURL(csvBlob); const a = document.createElement("a");
+      const blob = await fetch("/api/module2/export", { headers: { Authorization: `Bearer ${useStore.getState().accessToken}` } }).then(r => r.blob());
+      const url = window.URL.createObjectURL(blob); const a = document.createElement("a");
       a.href = url; a.download = `session_${activeSession?.sessionId}.csv`; document.body.appendChild(a); a.click();
       document.body.removeChild(a); window.URL.revokeObjectURL(url);
-    } catch (error) { console.error("CSV Export failed:", error); }
+    } catch (err) { console.error("CSV Export failed:", err); }
   };
 
   const toggleStrikeSelection = (strike: string) => {
@@ -495,24 +397,25 @@ export const Module2 = () => {
 
   const sortedTimestamps = (() => {
     const tsSet = new Set<string>();
-    Object.values(currentSession.strikes).forEach((s: any) => { s.grid.forEach((cell: any) => { if (cell.timestamp) tsSet.add(cell.timestamp); }); });
+    Object.values(currentSession.strikes).forEach((s: any) => { s.grid.forEach((c: any) => { if (c.timestamp) tsSet.add(c.timestamp); }); });
     if (tsSet.size === 0) {
-      const fallback: string[] = []; const startHour = 9; const startMinute = 15;
+      const fb: string[] = [];
       for (let m = 0; m < 16; m++) {
-        let minVal = startMinute + m; let hrVal = startHour + Math.floor(minVal / 60);
-        fallback.push(`${hrVal.toString().padStart(2, "0")}:${(minVal % 60).toString().padStart(2, "0")}`);
+        let minVal = 15 + m; let hrVal = 9 + Math.floor(minVal / 60);
+        fb.push(`${hrVal.toString().padStart(2, "0")}:${(minVal % 60).toString().padStart(2, "0")}`);
       }
-      return fallback;
+      return fb;
     }
     return Array.from(tsSet).sort();
   })();
 
-  const topStrikes = Object.values(currentSession.strikes).sort((a: any, b: any) => b.pctChange - a.pctChange).slice(0, 3).map((s: any) => s.strike);
+  const topStrikes = Object.values(currentSession.strikes)
+    .sort((a: any, b: any) => b.pctChange - a.pctChange)
+    .slice(0, 3).map((s: any) => s.strike);
 
   const processedStrikes = [...currentSession.selectedStrikes]
     .filter((strike) => {
-      const s = currentSession.strikes[strike];
-      if (!s) return true;
+      const s = currentSession.strikes[strike]; if (!s) return true;
       const latestLtp = s.grid.length > 0 ? s.grid[s.grid.length - 1].ltp : s.dayOpen;
       if (priceAbove !== "" && latestLtp < Number(priceAbove)) return false;
       if (priceBelow !== "" && latestLtp > Number(priceBelow)) return false;
@@ -520,10 +423,10 @@ export const Module2 = () => {
       return true;
     })
     .sort((a, b) => {
-      const stateA = currentSession.strikes[a]; const stateB = currentSession.strikes[b];
-      if (!stateA || !stateB) return 0;
-      const ltpA = stateA.grid.length > 0 ? stateA.grid[stateA.grid.length - 1].ltp : stateA.dayOpen;
-      const ltpB = stateB.grid.length > 0 ? stateB.grid[stateB.grid.length - 1].ltp : stateB.dayOpen;
+      const sA = currentSession.strikes[a]; const sB = currentSession.strikes[b];
+      if (!sA || !sB) return 0;
+      const ltpA = sA.grid.length > 0 ? sA.grid[sA.grid.length - 1].ltp : sA.dayOpen;
+      const ltpB = sB.grid.length > 0 ? sB.grid[sB.grid.length - 1].ltp : sB.dayOpen;
       if (sortOrder === "high_value") return ltpB - ltpA;
       if (sortOrder === "low_value") return ltpA - ltpB;
       return 0;
@@ -532,209 +435,190 @@ export const Module2 = () => {
   const ceStrikesList = processedStrikes.filter((s) => s.endsWith("CE"));
   const peStrikesList = processedStrikes.filter((s) => s.endsWith("PE"));
 
-  const actualStrikesCount = currentSession.selectedStrikes.length;
-  if (currentSession.sessionType === "CE" && actualStrikesCount < 10) console.error(`Validation Error: CE mode expects 10 rows, but only has ${actualStrikesCount} rows.`);
-  else if (currentSession.sessionType === "PE" && actualStrikesCount < 10) console.error(`Validation Error: PE mode expects 10 rows, but only has ${actualStrikesCount} rows.`);
-  else if (currentSession.sessionType === "mixed" && actualStrikesCount < 10) console.error(`Validation Error: Mixed mode expects 10 rows, but only has ${actualStrikesCount} rows.`);
-
   // ── RENDER ──────────────────────────────────────────────────────────────────
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
         @keyframes m2-enter {
-          from { opacity: 0; transform: translateY(14px) scale(0.98); }
-          to   { opacity: 1; transform: translateY(0) scale(1); }
+          from { opacity: 0; transform: translateY(10px); }
+          to   { opacity: 1; transform: translateY(0); }
         }
-        @keyframes m2-scan {
-          0%   { transform: translateY(-100%); opacity: 0; }
-          10%  { opacity: 0.6; }
-          90%  { opacity: 0.3; }
-          100% { transform: translateY(2000px); opacity: 0; }
+        .m2-section { animation: m2-enter 0.35s ease both; }
+
+        .m2-th {
+          font-family: 'Inter', sans-serif; font-size: 10px; font-weight: 700;
+          letter-spacing: 0.08em; text-transform: uppercase;
+          padding: 10px 12px; white-space: nowrap;
+          color: var(--trading-text-muted);
+          background: var(--trading-bg);
+          border-bottom: 1.5px solid var(--trading-border);
+          position: sticky; top: 0; z-index: 2;
         }
-        @keyframes m2-row {
-          from { opacity: 0; transform: translateX(-4px); }
-          to   { opacity: 1; transform: translateX(0); }
+        .m2-td {
+          font-family: 'Inter', sans-serif; font-size: 12px;
+          padding: 9px 12px; white-space: nowrap;
+          border-bottom: 1px solid var(--trading-border);
+          color: var(--trading-text-active);
         }
-        @keyframes m2-pulse-green { 0%,100% { box-shadow: 0 0 0 0 rgba(4,120,87,0.3); } 50% { box-shadow: 0 0 0 4px rgba(4,120,87,0); } }
+        .m2-tr:hover td { background: rgba(4,120,87,0.03) !important; }
 
-.m2-page {
-  font-family: 'Inter', sans-serif;
-  background: var(--trading-bg);
-  min-height: 100vh; position: relative; z-index: 2;
-}
-        .m2-mono { font-family: 'IBM Plex Mono', monospace; }
-        .m2-scan-line { position: fixed; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(4,120,87,0.35), rgba(4,120,87,0.5), rgba(4,120,87,0.35), transparent); animation: m2-scan 10s ease-in-out infinite; pointer-events: none; z-index: 1; }
-        .m2-card-enter { animation: m2-enter 0.5s cubic-bezier(0.16,1,0.3,1) both; }
+        .m2-strike-chip {
+          display: flex; flex-direction: column; align-items: center;
+          padding: 8px 6px; border-radius: 8px; cursor: pointer;
+          transition: all 0.15s; border: 1.5px solid var(--trading-border);
+          background: var(--trading-bg);
+        }
+        .m2-strike-chip:hover { border-color: ${GREEN}; background: rgba(4,120,87,0.04); }
 
-.m2-th {
-  font-family: 'IBM Plex Mono', monospace; font-size: 9px; font-weight: 700;
-  letter-spacing: 0.25em; text-transform: uppercase;
-  padding: 11px 10px; white-space: nowrap;
-  color: var(--trading-text-muted);
-  background: var(--trading-surface);
-  border-bottom: 1px solid rgba(4,120,87,0.1);
-  position: sticky; top: 0; z-index: 2;
-}        
-.m2-td {
-  font-family: 'IBM Plex Mono', monospace; font-size: 11px;
-  padding: 9px 10px; white-space: nowrap;
-  border-bottom: 1px solid rgba(4,120,87,0.05);
-  color: var(--trading-text-active);
-}        .m2-tr { animation: m2-row 0.25s ease both; }
-        .m2-tr:hover td { background: rgba(4,120,87,0.025) !important; }
+        .m2-ce-btn, .m2-pe-btn {
+          flex: 1; padding: 3px 0; border-radius: 5px;
+          font-family: 'Inter', sans-serif; font-size: 10px; font-weight: 700;
+          cursor: pointer; transition: all 0.15s; border: 1.5px solid transparent;
+        }
+        .m2-ce-btn { color: ${GREEN}; background: rgba(4,120,87,0.08); border-color: rgba(4,120,87,0.2); }
+        .m2-ce-btn:hover { background: rgba(4,120,87,0.14); }
+        .m2-ce-btn.active { background: ${GREEN}; color: #fff; border-color: ${GREEN}; }
+        .m2-pe-btn { color: ${RED}; background: rgba(229,57,53,0.08); border-color: rgba(229,57,53,0.2); }
+        .m2-pe-btn:hover { background: rgba(229,57,53,0.14); }
+        .m2-pe-btn.active { background: ${RED}; color: #fff; border-color: ${RED}; }
 
-.m2-strike-chip {
-  display: flex; flex-direction: column; align-items: center;
-  padding: 8px 6px; border-radius: 2px; cursor: pointer;
-  transition: all 0.15s; border: 1px solid rgba(4,120,87,0.12);
-  background: var(--trading-bg);
-}        .m2-strike-chip:hover { border-color: rgba(4,120,87,0.35); background: rgba(4,120,87,0.04); }
-
-        .m2-ce-btn, .m2-pe-btn { flex: 1; padding: 3px 0; border-radius: 2px; font-family: 'IBM Plex Mono', monospace; font-size: 9px; font-weight: 800; letter-spacing: 0.1em; cursor: pointer; transition: all 0.15s; border: 1px solid transparent; }
-        .m2-ce-btn { color: #047857; background: rgba(4,120,87,0.06); border-color: rgba(4,120,87,0.2); }
-        .m2-ce-btn:hover { background: rgba(4,120,87,0.12); }
-        .m2-ce-btn.active { background: #047857; color: #fff; border-color: #047857; box-shadow: 0 1px 8px rgba(4,120,87,0.3); }
-        .m2-pe-btn { color: #B91C1C; background: rgba(185,28,28,0.06); border-color: rgba(185,28,28,0.2); }
-        .m2-pe-btn:hover { background: rgba(185,28,28,0.12); }
-        .m2-pe-btn.active { background: #B91C1C; color: #fff; border-color: #B91C1C; box-shadow: 0 1px 8px rgba(185,28,28,0.25); }
-
-.m2-input {
-  font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600;
-  background: var(--trading-bg);
-  border: 1px solid rgba(4,120,87,0.3); border-radius: 2px;
-  padding: 5px 10px; outline: none;
-  color: var(--trading-text-active);
-  width: 80px; transition: border-color 0.15s;
-}        .m2-input:focus { border-color: #047857; box-shadow: 0 0 8px rgba(4,120,87,0.15); }
+        .m2-input {
+          font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 500;
+          background: var(--trading-bg); border: 1.5px solid var(--trading-border);
+          border-radius: 8px; padding: 6px 10px; outline: none;
+          color: var(--trading-text-active); width: 80px; transition: border-color 0.15s;
+        }
+        .m2-input:focus { border-color: ${GREEN}; box-shadow: 0 0 0 3px rgba(4,120,87,0.1); }
         .m2-input::placeholder { color: #94a3b8; }
         input[type=number].m2-input::-webkit-inner-spin-button { -webkit-appearance: none; }
 
-        .m2-cta { width: 100%; padding: 11px; border-radius: 2px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; cursor: pointer; border: 1px solid #047857; background: #047857; color: #fff; transition: all 0.2s; position: relative; overflow: hidden; }
-        .m2-cta:hover:not(:disabled) { box-shadow: 0 4px 20px rgba(4,120,87,0.3); opacity: 0.92; }
-        .m2-cta:disabled { opacity: 0.4; cursor: not-allowed; }
+        .m2-cta {
+          width: 100%; padding: 13px; border-radius: 8px;
+          font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 700;
+          cursor: pointer; border: none; background: ${GREEN}; color: #fff;
+          transition: all 0.2s; box-shadow: 0 4px 14px rgba(4,120,87,0.3);
+        }
+        .m2-cta:hover:not(:disabled) { opacity: 0.9; }
+        .m2-cta:disabled { opacity: 0.45; cursor: not-allowed; }
 
-        .m2-export { font-family: 'IBM Plex Mono', monospace; font-size: 9px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; padding: 6px 16px; border-radius: 2px; cursor: pointer; border: 1px solid rgba(4,120,87,0.35); background: rgba(4,120,87,0.06); color: #047857; transition: all 0.15s; }
-        .m2-export:hover { background: #047857; color: #fff; box-shadow: 0 2px 12px rgba(4,120,87,0.2); }
+        .m2-export {
+          font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 600;
+          padding: 7px 16px; border-radius: 8px; cursor: pointer;
+          border: 1.5px solid ${GREEN}; background: rgba(4,120,87,0.06);
+          color: ${GREEN}; transition: all 0.15s;
+        }
+        .m2-export:hover { background: ${GREEN}; color: #fff; }
 
-.m2-reset {
-  font-family: 'IBM Plex Mono', monospace; font-size: 9px; font-weight: 700;
-  letter-spacing: 0.12em; text-transform: uppercase;
-  padding: 5px 12px; border-radius: 2px; cursor: pointer;
-  border: 1px solid var(--trading-border);
-  background: transparent; color: var(--trading-text-muted);
-  transition: all 0.15s;
-}        .m2-reset:hover { border-color: #0f172a; color: #0f172a; }
-
-        .m2-deep-loss-row td { background: rgba(185,28,28,0.04) !important; }
-        .m2-downtrend-row td { background: rgba(217,119,6,0.04) !important; }
-        .m2-top3-glow { box-shadow: inset 2px 0 0 #D97706; }
+        .m2-reset {
+          font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 600;
+          padding: 6px 14px; border-radius: 8px; cursor: pointer;
+          border: 1.5px solid var(--trading-border);
+          background: transparent; color: var(--trading-text-muted); transition: all 0.15s;
+        }
+        .m2-reset:hover { border-color: var(--trading-text-active); color: var(--trading-text-active); }
       `}</style>
 
-      <GridBackground />
-      <div className="m2-scan-line" />
+      <div style={{ minHeight: "100vh", background: "var(--trading-bg)", fontFamily: "'Inter', sans-serif" }}>
+        <div style={{ maxWidth: 1600, margin: "0 auto", padding: "24px 24px 40px", display: "flex", flexDirection: "column", gap: 20 }}>
 
-      <div className="m2-page">
-        <div style={{ maxWidth: 1600, margin: "0 auto", padding: "28px 20px", display: "flex", flexDirection: "column", gap: 20 }}>
-
-          {/* ── Header ────────────────────────────────────────────────────── */}
+          {/* Header */}
           <div
-            className="relative m2-card-enter"
-            style={{ background: T.surface, border: `1.5px solid ${T.border}`, borderRadius: 2, boxShadow: T.shadow, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}
+            className="m2-section"
+            style={{
+              background: "var(--trading-surface)", border: "1.5px solid var(--trading-border)",
+              borderRadius: 14, padding: "18px 24px",
+              display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12,
+              boxShadow: "0 1px 8px rgba(0,0,0,0.05)",
+            }}
           >
-            <ScopeCorners size={10} />
-            <div className="absolute top-0 left-0 right-0 h-[1.5px]" style={{ background: `linear-gradient(90deg, transparent, ${T.green}60, transparent)` }} />
-
             <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: T.green, animation: "m2-pulse-green 2s infinite", display: "inline-block" }} />
-                <span className="m2-mono" style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.35em", textTransform: "uppercase", color: T.green }}>MODULE 02</span>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: GREEN, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 2 }}>
+                  Module 02
+                </div>
+                <h1 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: "var(--trading-text-active)", letterSpacing: "-0.0em" }}>
+                  Strike Tracker
+                </h1>
               </div>
-              <div style={{ width: 1, height: 18, background: `${T.green}30` }} />
-              <h1 className="m2-mono" style={{ fontSize: 15, fontWeight: 900, letterSpacing: "0.1em", textTransform: "uppercase", color: T.textPrimary }}>
-                Strike Tracker
-              </h1>
-              <div style={{ width: 1, height: 18, background: `${T.green}30` }} />
-              <span className="m2-mono" style={{ fontSize: 10, color: T.textMuted }}>
+              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--trading-text-muted)", background: "var(--trading-bg)", padding: "3px 10px", borderRadius: 6, border: "1.5px solid var(--trading-border)" }}>
                 {currentSession.indexSymbol} · {currentSession.expiryDate}
               </span>
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div>
               {activeSession ? (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 2, background: T.greenLight, border: `1px solid ${T.greenBorderSoft}`, fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: T.green }}>
-                  <span style={{ width: 5, height: 5, borderRadius: "50%", background: T.green, animation: "m2-pulse-green 1.5s infinite", display: "inline-block" }} />
-                  LIVE SESSION
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 8, background: "rgba(4,120,87,0.1)", border: "1.5px solid rgba(4,120,87,0.25)", fontSize: 12, fontWeight: 700, color: GREEN }}>
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: GREEN, display: "inline-block" }} className="animate-pulse" />
+                  Live Session
                 </span>
               ) : (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 2, background: "rgba(100,116,139,0.08)", border: "1px solid rgba(100,116,139,0.2)", fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: T.textMuted }}>
-                  DEMO MODE
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 8, background: "rgba(100,116,139,0.08)", border: "1.5px solid rgba(100,116,139,0.2)", fontSize: 12, fontWeight: 700, color: "#64748b" }}>
+                  Demo Mode
                 </span>
               )}
             </div>
           </div>
 
-          {/* ── Configuration Card ────────────────────────────────────────── */}
+          {/* Configuration */}
           <div
-            className="relative m2-card-enter"
-            style={{ background: T.surface, border: `1.5px solid ${T.border}`, borderRadius: 2, boxShadow: T.shadow, padding: "20px 24px", animationDelay: "0.04s" }}
+            className="m2-section"
+            style={{
+              background: "var(--trading-surface)", border: "1.5px solid var(--trading-border)",
+              borderRadius: 14, padding: "20px 24px",
+              boxShadow: "0 1px 8px rgba(0,0,0,0.05)", animationDelay: "0.04s",
+            }}
           >
-            <ScopeCorners size={8} />
-            <div className="absolute top-0 left-0 right-0 h-[1.5px]" style={{ background: `linear-gradient(90deg, transparent, ${T.green}50, transparent)` }} />
-
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 18 }}>
-              <span className="m2-mono" style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.3em", textTransform: "uppercase", color: T.textMuted }}>Session Configuration</span>
+            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 18 }}>
+              Session Configuration
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 20 }}>
-              <PremiumSelect
-                label="Index Symbol"
-                value={indexSymbol}
-                onChange={setIndexSymbol}
+              <SelectField
+                label="Index Symbol" value={indexSymbol} onChange={setIndexSymbol}
                 options={[
-                  { value: "NIFTY50", label: "NIFTY 50 (Step 50)" },
+                  { value: "NIFTY50",   label: "NIFTY 50 (Step 50)" },
                   { value: "BANKNIFTY", label: "BANK NIFTY (Step 100)" },
-                  { value: "FINNIFTY", label: "FIN NIFTY (Step 50)" },
+                  { value: "FINNIFTY",  label: "FIN NIFTY (Step 50)" },
                 ]}
               />
-              <PremiumSelect
-                label="Options Expiry"
-                value={expiryDate}
-                onChange={setExpiryDate}
+              <SelectField
+                label="Options Expiry" value={expiryDate} onChange={setExpiryDate}
                 options={[
                   { value: "2026-06-04", label: "04-JUN-2026 (Weekly)" },
                   { value: "2026-06-11", label: "11-JUN-2026 (Weekly)" },
                   { value: "2026-06-25", label: "25-JUN-2026 (Monthly)" },
                 ]}
               />
-              <div className="flex flex-col gap-1.5">
-                <label className="m2-mono" style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.3em", textTransform: "uppercase", color: T.textMuted }}>Session Type</label>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <label style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 600, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  Session Type
+                </label>
                 <SegmentedControl
                   options={[{ key: "CE" as const, label: "CE" }, { key: "PE" as const, label: "PE" }, { key: "mixed" as const, label: "Mixed" }]}
-                  value={sessionType}
-                  onChange={setSessionType}
+                  value={sessionType} onChange={setSessionType}
                 />
               </div>
             </div>
 
             {/* Strike selection */}
-            <div style={{ marginBottom: 18 }}>
+            <div style={{ marginBottom: 20 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <span className="m2-mono" style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.25em", textTransform: "uppercase", color: T.textMuted }}>
+                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
                   Select Strikes
                 </span>
-                <span className="m2-mono" style={{ fontSize: 9, color: T.textFaint }}>
+                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 500, color: "var(--trading-text-muted)" }}>
                   {selectedStrikes.length}/{sessionType === "mixed" ? 20 : 10} selected
                 </span>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(72px, 1fr))", gap: 6, maxHeight: 160, overflowY: "auto", paddingRight: 4 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(70px, 1fr))", gap: 6, maxHeight: 160, overflowY: "auto", paddingRight: 4 }}>
                 {(chainData?.strikes || []).map((s: any) => {
                   const ceSelected = selectedStrikes.includes(s.CE);
                   const peSelected = selectedStrikes.includes(s.PE);
                   return (
                     <div key={s.strikePrice} className="m2-strike-chip">
-                      <span className="m2-mono" style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, marginBottom: 5 }}>{s.strikePrice}</span>
+                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 10, fontWeight: 600, color: "var(--trading-text-muted)", marginBottom: 5 }}>{s.strikePrice}</span>
                       <div style={{ display: "flex", gap: 3, width: "100%" }}>
                         {sessionType !== "PE" && (
                           <button onClick={() => toggleStrikeSelection(s.CE)} className={`m2-ce-btn${ceSelected ? " active" : ""}`}>CE</button>
@@ -758,78 +642,67 @@ export const Module2 = () => {
             </button>
           </div>
 
-          {/* ── Toolbar ───────────────────────────────────────────────────── */}
+          {/* Toolbar */}
           <div
-            className="relative m2-card-enter"
-            style={{ background: T.surface, border: `1.5px solid ${T.border}`, borderRadius: 2, boxShadow: T.shadow, padding: "14px 20px", animationDelay: "0.08s" }}
+            className="m2-section"
+            style={{
+              background: "var(--trading-surface)", border: "1.5px solid var(--trading-border)",
+              borderRadius: 14, padding: "14px 20px",
+              boxShadow: "0 1px 8px rgba(0,0,0,0.05)", animationDelay: "0.08s",
+            }}
           >
-            <ScopeCorners size={7} />
-            <div className="absolute top-0 left-0 right-0 h-[1.5px]" style={{ background: `linear-gradient(90deg, transparent, ${T.green}40, transparent)` }} />
-
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
               <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-
-                {/* Filter type */}
                 <SegmentedControl
                   options={[{ key: "mixed" as const, label: "All" }, { key: "CE" as const, label: "CE" }, { key: "PE" as const, label: "PE" }]}
-                  value={filterType}
-                  onChange={setFilterType}
-                  size="xs"
+                  value={filterType} onChange={setFilterType} size="xs"
                 />
-
-                <div style={{ width: 1, height: 20, background: `${T.green}20` }} />
-
-                {/* Sort */}
+                <div style={{ width: 1, height: 22, background: "var(--trading-border)" }} />
                 <SegmentedControl
                   options={[{ key: "default" as const, label: "Default" }, { key: "high_value" as const, label: "High ↓" }, { key: "low_value" as const, label: "Low ↑" }]}
-                  value={sortOrder}
-                  onChange={setSortOrder}
-                  size="xs"
+                  value={sortOrder} onChange={setSortOrder} size="xs"
                 />
-
-                <div style={{ width: 1, height: 20, background: `${T.green}20` }} />
-
-                {/* Price filters */}
-                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <span className="m2-mono" style={{ fontSize: 9, color: T.textMuted }}>Above</span>
-                  <input type="number" placeholder="Min" value={priceAbove} onChange={(e) => setPriceAbove(e.target.value === "" ? "" : Number(e.target.value))} className="m2-input" style={{ width: 64 }} />
+                <div style={{ width: 1, height: 22, background: "var(--trading-border)" }} />
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 500, color: "var(--trading-text-muted)" }}>Above</span>
+                  <input type="number" placeholder="Min" value={priceAbove} onChange={(e) => setPriceAbove(e.target.value === "" ? "" : Number(e.target.value))} className="m2-input" style={{ width: 70 }} />
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <span className="m2-mono" style={{ fontSize: 9, color: T.textMuted }}>Below</span>
-                  <input type="number" placeholder="Max" value={priceBelow} onChange={(e) => setPriceBelow(e.target.value === "" ? "" : Number(e.target.value))} className="m2-input" style={{ width: 64 }} />
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 500, color: "var(--trading-text-muted)" }}>Below</span>
+                  <input type="number" placeholder="Max" value={priceBelow} onChange={(e) => setPriceBelow(e.target.value === "" ? "" : Number(e.target.value))} className="m2-input" style={{ width: 70 }} />
                 </div>
-
-                <div style={{ width: 1, height: 20, background: `${T.green}20` }} />
-
-                <FilterChip label="Call-Down" active={callDownCollapsedToggle} onClick={() => setCallDownCollapsedToggle(!callDownCollapsedToggle)} color={T.red} />
-                <FilterChip label="Top 3" active={highlightTop3} onClick={() => setHighlightTop3(!highlightTop3)} color={T.amber} />
-
+                <div style={{ width: 1, height: 22, background: "var(--trading-border)" }} />
+                <FilterChip label="Call-Down" active={callDownCollapsedToggle} onClick={() => setCallDownCollapsedToggle(!callDownCollapsedToggle)} color={RED} />
+                <FilterChip label="Top 3" active={highlightTop3} onClick={() => setHighlightTop3(!highlightTop3)} color={AMBER} />
                 <button className="m2-reset" onClick={() => { setSortOrder("default"); setPriceAbove(""); setPriceBelow(""); setHighlightTop3(false); setCallDownCollapsedToggle(false); setFilterType("mixed"); }}>
                   Reset
                 </button>
               </div>
-
               <button className="m2-export" onClick={handleExportCSV}>Export CSV</button>
             </div>
           </div>
 
-          {/* ── CE Table ──────────────────────────────────────────────────── */}
+          {/* CE Table */}
           {(filterType === "mixed" || filterType === "CE") && (
-            <div className="m2-card-enter" style={{ animationDelay: "0.1s" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: T.green, display: "inline-block" }} />
-                <span className="m2-mono" style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.3em", textTransform: "uppercase", color: T.green }}>CE Strikes</span>
+            <div className="m2-section" style={{ animationDelay: "0.1s" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: GREEN, display: "inline-block" }} />
+                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: GREEN, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  CE Strikes
+                </span>
               </div>
               <StrikeTrackerTable strikesList={ceStrikesList} session={currentSession} sortedTimestamps={sortedTimestamps} highlightTop3={highlightTop3} topStrikes={topStrikes} />
             </div>
           )}
 
-          {/* ── PE Table ──────────────────────────────────────────────────── */}
+          {/* PE Table */}
           {(filterType === "mixed" || filterType === "PE") && (
-            <div className="m2-card-enter" style={{ animationDelay: "0.13s" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: T.red, display: "inline-block" }} />
-                <span className="m2-mono" style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.3em", textTransform: "uppercase", color: T.red }}>PE Strikes</span>
+            <div className="m2-section" style={{ animationDelay: "0.13s" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: RED, display: "inline-block" }} />
+                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: RED, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  PE Strikes
+                </span>
               </div>
               <StrikeTrackerTable strikesList={peStrikesList} session={currentSession} sortedTimestamps={sortedTimestamps} highlightTop3={highlightTop3} topStrikes={topStrikes} />
             </div>
@@ -841,35 +714,36 @@ export const Module2 = () => {
   );
 };
 
-// ── StrikeTrackerTable — visual redesign, logic untouched ────────────────────
+// ── StrikeTrackerTable ────────────────────────────────────────────────────────
 function StrikeTrackerTable({ strikesList, session, sortedTimestamps, highlightTop3, topStrikes }: {
-  strikesList: string[]; session: any; sortedTimestamps: string[]; highlightTop3: boolean; topStrikes: string[];
+  strikesList: string[]; session: any; sortedTimestamps: string[];
+  highlightTop3: boolean; topStrikes: string[];
 }) {
   return (
     <div
       style={{
-        background: T.surface, border: `1.5px solid ${T.border}`,
-        borderRadius: 2, boxShadow: T.shadow, overflow: "hidden", position: "relative",
+        background: "var(--trading-surface)", border: "1.5px solid var(--trading-border)",
+        borderRadius: 12, overflow: "hidden",
+        boxShadow: "0 1px 8px rgba(0,0,0,0.05)",
       }}
     >
-      <div className="absolute top-0 left-0 right-0 h-[1.5px]" style={{ background: `linear-gradient(90deg, transparent, ${T.green}40, transparent)` }} />
       <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "62vh" }}>
-        <table style={{ width: "100%", textAlign: "left", borderCollapse: "separate", borderSpacing: 0 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
           <thead>
             <tr>
-              <th className="m2-th" style={{ minWidth: 160, position: "sticky", left: 0, top: 0, zIndex: 40, borderRight: `1px solid ${T.borderFaint}` }}>Strike</th>
-              <th className="m2-th" style={{ textAlign: "center", minWidth: 72, borderRight: `1px solid ${T.borderFaint}` }}>Day Open</th>
+              <th className="m2-th" style={{ minWidth: 180, position: "sticky", left: 0, top: 0, zIndex: 40, borderRight: "1px solid var(--trading-border)" }}>Strike</th>
+              <th className="m2-th" style={{ textAlign: "center", minWidth: 72, borderRight: "1px solid var(--trading-border)" }}>Day Open</th>
               {sortedTimestamps.map((ts) => (
                 <th key={ts} className="m2-th" style={{ textAlign: "center", minWidth: 60 }}>{ts}</th>
               ))}
-              <th className="m2-th" style={{ textAlign: "center", minWidth: 68, borderLeft: `1px solid ${T.borderFaint}`, position: "sticky", right: 68, top: 0, zIndex: 40 }}>High</th>
+              <th className="m2-th" style={{ textAlign: "center", minWidth: 68, borderLeft: "1px solid var(--trading-border)", position: "sticky", right: 68, top: 0, zIndex: 40 }}>High</th>
               <th className="m2-th" style={{ textAlign: "center", minWidth: 68, position: "sticky", right: 0, top: 0, zIndex: 40 }}>Low</th>
             </tr>
           </thead>
           <tbody>
             {strikesList.length === 0 ? (
               <tr>
-                <td colSpan={sortedTimestamps.length + 4} style={{ padding: "32px 16px", textAlign: "center", fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: T.textMuted }}>
+                <td colSpan={sortedTimestamps.length + 4} style={{ padding: "32px 16px", textAlign: "center", fontFamily: "'Inter', sans-serif", fontSize: 13, color: "var(--trading-text-muted)" }}>
                   No strikes to display in this category.
                 </td>
               </tr>
@@ -879,32 +753,33 @@ function StrikeTrackerTable({ strikesList, session, sortedTimestamps, highlightT
                 if (!s) return null;
                 const parsed = parseStrikeSymbol(strike);
                 const isTop3 = highlightTop3 && topStrikes.includes(strike);
+                const isCE = parsed.optionType === "CE";
 
-                const rowStyle: React.CSSProperties = s.isDeepLoss
-                  ? { background: "rgba(185,28,28,0.03)" }
+                const rowBg = s.isDeepLoss ? "rgba(229,57,53,0.03)" : s.isDowntrendActive ? "rgba(217,119,6,0.03)" : "transparent";
+                // sticky cell needs a solid background
+                const stickyBg = s.isDeepLoss
+                  ? "rgba(255,242,242,0.98)"
                   : s.isDowntrendActive
-                  ? { background: "rgba(217,119,6,0.03)" }
-                  : {};
-
-                const stickyBg = s.isDeepLoss ? "rgba(253,242,242,0.98)" : s.isDowntrendActive ? "rgba(255,251,235,0.98)" : "rgba(255,255,255,0.98)";
+                  ? "rgba(255,251,235,0.98)"
+                  : "var(--trading-surface)";
 
                 return (
                   <tr
                     key={strike}
-                    className={`m2-tr${s.isDeepLoss ? " m2-deep-loss-row" : s.isDowntrendActive ? " m2-downtrend-row" : ""}${isTop3 ? " m2-top3-glow" : ""}`}
-                    style={{ ...rowStyle, animationDelay: `${rowIdx * 0.02}s` }}
+                    className="m2-tr"
+                    style={{ background: rowBg, borderLeft: isTop3 ? `3px solid ${AMBER}` : undefined }}
                   >
                     {/* Sticky strike cell */}
-                    <td className="m2-td" style={{ position: "sticky", left: 0, zIndex: 20, background: stickyBg, borderRight: `1px solid ${T.borderFaint}`, minWidth: 160 }}>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <span className="m2-mono" style={{ fontSize: 13, fontWeight: 800, color: T.textPrimary }}>{parsed.strikePrice}</span>
+                    <td className="m2-td" style={{ position: "sticky", left: 0, zIndex: 20, background: stickyBg, borderRight: "1px solid var(--trading-border)", minWidth: 180 }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, fontWeight: 800, color: "var(--trading-text-active)" }}>{parsed.strikePrice}</span>
                           <span style={{
-                            padding: "1px 6px", borderRadius: 2,
-                            fontFamily: "'IBM Plex Mono', monospace", fontSize: 8, fontWeight: 800, letterSpacing: "0.1em",
-                            color: parsed.optionType === "CE" ? T.green : T.red,
-                            background: parsed.optionType === "CE" ? T.greenLight : T.redLight,
-                            border: `1px solid ${parsed.optionType === "CE" ? T.greenBorderSoft : T.redBorder}`,
+                            padding: "2px 7px", borderRadius: 5,
+                            fontSize: 10, fontWeight: 700, fontFamily: "'Inter', sans-serif",
+                            color: isCE ? GREEN : RED,
+                            background: isCE ? "rgba(4,120,87,0.1)" : "rgba(229,57,53,0.1)",
+                            border: `1px solid ${isCE ? "rgba(4,120,87,0.25)" : "rgba(229,57,53,0.25)"}`,
                           }}>
                             {parsed.optionType}
                           </span>
@@ -912,18 +787,18 @@ function StrikeTrackerTable({ strikesList, session, sortedTimestamps, highlightT
                         </div>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                           {isTop3 && (
-                            <span style={{ padding: "1px 6px", borderRadius: 2, fontFamily: "'IBM Plex Mono', monospace", fontSize: 8, fontWeight: 800, letterSpacing: "0.08em", color: T.amber, background: T.amberLight, border: "1px solid rgba(217,119,6,0.25)" }}>
-                              TOP 3
+                            <span style={{ padding: "2px 7px", borderRadius: 5, fontFamily: "'Inter', sans-serif", fontSize: 10, fontWeight: 700, color: AMBER, background: "rgba(217,119,6,0.1)", border: "1px solid rgba(217,119,6,0.25)" }}>
+                              Top 3
                             </span>
                           )}
                           {s.isDeepLoss && (
-                            <span className="animate-pulse" style={{ padding: "1px 6px", borderRadius: 2, fontFamily: "'IBM Plex Mono', monospace", fontSize: 8, fontWeight: 800, letterSpacing: "0.08em", color: T.red, background: T.redLight, border: `1px solid ${T.redBorder}` }}>
-                              SEVERE −15%
+                            <span className="animate-pulse" style={{ padding: "2px 7px", borderRadius: 5, fontFamily: "'Inter', sans-serif", fontSize: 10, fontWeight: 700, color: RED, background: "rgba(229,57,53,0.1)", border: "1px solid rgba(229,57,53,0.25)" }}>
+                              Severe −15%
                             </span>
                           )}
                           {!s.isDeepLoss && s.isDowntrendActive && (
-                            <span style={{ padding: "1px 6px", borderRadius: 2, fontFamily: "'IBM Plex Mono', monospace", fontSize: 8, fontWeight: 800, letterSpacing: "0.08em", color: T.amber, background: T.amberLight, border: "1px solid rgba(217,119,6,0.25)" }}>
-                              DOWN 3m
+                            <span style={{ padding: "2px 7px", borderRadius: 5, fontFamily: "'Inter', sans-serif", fontSize: 10, fontWeight: 700, color: AMBER, background: "rgba(217,119,6,0.1)", border: "1px solid rgba(217,119,6,0.25)" }}>
+                              Down 3m
                             </span>
                           )}
                         </div>
@@ -931,18 +806,16 @@ function StrikeTrackerTable({ strikesList, session, sortedTimestamps, highlightT
                     </td>
 
                     {/* Day open */}
-                    <td className="m2-td" style={{ textAlign: "center", borderRight: `1px solid ${T.borderFaint}`, color: T.textMuted, fontWeight: 500 }}>
+                    <td className="m2-td" style={{ textAlign: "center", borderRight: "1px solid var(--trading-border)", color: "var(--trading-text-muted)", fontWeight: 500 }}>
                       {Math.round(s.dayOpen)}
                     </td>
 
                     {/* Minute columns */}
                     {sortedTimestamps.map((ts) => {
                       const cell = s.grid.find((c: any) => c.timestamp === ts);
-                      if (!cell) return (
-                        <td key={ts} className="m2-td" style={{ textAlign: "center", color: T.textFaint }}>—</td>
-                      );
+                      if (!cell) return <td key={ts} className="m2-td" style={{ textAlign: "center", color: "var(--trading-text-muted)" }}>—</td>;
                       const isCellHigh = cell.ltp === s.dayHigh && s.dayHigh > 0;
-                      const isCellLow = cell.ltp === s.dayLow && s.dayLow > 0;
+                      const isCellLow  = cell.ltp === s.dayLow  && s.dayLow  > 0;
                       return (
                         <td
                           key={ts}
@@ -950,9 +823,8 @@ function StrikeTrackerTable({ strikesList, session, sortedTimestamps, highlightT
                           title={`${cell.timestamp} · ${cell.ltp}`}
                           style={{
                             textAlign: "center",
-                            borderRight: `1px solid rgba(4,120,87,0.04)`,
-                            background: isCellHigh ? "rgba(4,120,87,0.12)" : isCellLow ? "rgba(185,28,28,0.1)" : undefined,
-                            color: isCellHigh ? T.green : isCellLow ? T.red : T.textSecondary,
+                            background: isCellHigh ? "rgba(4,120,87,0.1)" : isCellLow ? "rgba(229,57,53,0.08)" : undefined,
+                            color: isCellHigh ? GREEN : isCellLow ? RED : "var(--trading-text-active)",
                             fontWeight: isCellHigh || isCellLow ? 700 : 400,
                           }}
                         >
@@ -961,13 +833,13 @@ function StrikeTrackerTable({ strikesList, session, sortedTimestamps, highlightT
                       );
                     })}
 
-                    {/* Day high */}
-                    <td className="m2-td" style={{ textAlign: "center", position: "sticky", right: 68, zIndex: 20, background: stickyBg, borderLeft: `1px solid ${T.borderFaint}`, color: T.green, fontWeight: 700 }}>
+                    {/* High */}
+                    <td className="m2-td" style={{ textAlign: "center", position: "sticky", right: 68, zIndex: 20, background: stickyBg, borderLeft: "1px solid var(--trading-border)", color: GREEN, fontWeight: 700 }}>
                       {Math.round(s.dayHigh)}
                     </td>
 
-                    {/* Day low */}
-                    <td className="m2-td" style={{ textAlign: "center", position: "sticky", right: 0, zIndex: 20, background: stickyBg, color: T.red, fontWeight: 700 }}>
+                    {/* Low */}
+                    <td className="m2-td" style={{ textAlign: "center", position: "sticky", right: 0, zIndex: 20, background: stickyBg, color: RED, fontWeight: 700 }}>
                       {Math.round(s.dayLow)}
                     </td>
                   </tr>

@@ -23,10 +23,10 @@ export default {
           dayLow: "var(--trading-day-low)",
         }
       },
-      fontFamily: {
-        sans: ["Outfit", "Inter", "sans-serif"],
-        mono: ["JetBrains Mono", "monospace"],
-      }
+    fontFamily: {
+  sans: ["Inter", "Outfit", "sans-serif"],
+  mono: ["Inter", "JetBrains Mono", "monospace"],
+}
     },
   },
   plugins: [],
