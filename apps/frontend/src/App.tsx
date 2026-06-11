@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
-import { BrowserRouter, Routes, Route, Navigate, Link, useLocation } from "react-router-dom";
+import { Routes, Route, Navigate, Link, useLocation, useNavigate } from "react-router-dom";
 import { useSocket } from "./hooks/useSocket";
 import { useStore } from "./store/useStore";
 import { Auth } from "./components/Auth";
 import { api } from "./utils/api";
 import { Module1 } from "./components/Module1";
 import { Module2 } from "./components/Module2";
+import { PanelLeftClose, PanelLeftOpen, Columns } from "lucide-react";
+
+
 
 const GREEN = "#047857";
 
@@ -74,7 +77,21 @@ function NavigationLink({ to, label, icon }: { to: string; label: string; icon: 
 }
 
 // ── Top bar ───────────────────────────────────────────────────────────────────
-function TopBar({ user, handleLogout }: { user: any; handleLogout: () => void }) {
+function TopBar({
+  user,
+  handleLogout,
+  isSidebarCollapsed,
+  toggleSidebar,
+  isSplitActive,
+  handleSplitToggle,
+}: {
+  user: any;
+  handleLogout: () => void;
+  isSidebarCollapsed: boolean;
+  toggleSidebar: () => void;
+  isSplitActive: boolean;
+  handleSplitToggle: () => void;
+}) {
   const [time, setTime] = useState(new Date());
   const theme = useStore((s) => s.theme);
   const toggleTheme = useStore((s) => s.toggleTheme);
@@ -149,6 +166,19 @@ function TopBar({ user, handleLogout }: { user: any; handleLogout: () => void })
           </svg>
         </button>
 
+        {/* Sidebar Collapse/Expand Toggle (Desktop only) */}
+        <button
+          onClick={toggleSidebar}
+          className="hidden md:flex sidebar-toggle-btn"
+          title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+        >
+          {isSidebarCollapsed ? (
+            <PanelLeftOpen size={18} />
+          ) : (
+            <PanelLeftClose size={18} />
+          )}
+        </button>
+
         {/* Clock */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, paddingRight: 20, borderRight: "1.5px solid var(--trading-border)" }}>
           <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 600, color: "var(--trading-text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Time</span>
@@ -178,6 +208,35 @@ function TopBar({ user, handleLogout }: { user: any; handleLogout: () => void })
 
       {/* Right */}
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        {/* Split Screen Button */}
+        <button
+          onClick={handleSplitToggle}
+          style={{
+            fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700,
+            padding: "5px 14px", borderRadius: 6,
+            border: `1.5px solid ${isSplitActive ? "var(--trading-bearish)" : "var(--trading-border)"}`,
+            background: isSplitActive ? "rgba(239, 68, 68, 0.08)" : "transparent",
+            color: isSplitActive ? "var(--trading-bearish)" : "var(--trading-text-muted)",
+            cursor: "pointer",
+            display: "flex", alignItems: "center", gap: 6,
+            transition: "all 0.15s ease",
+          }}
+          className="hidden md:flex"
+          title={isSplitActive ? "Exit Split Screen" : "Toggle Split Screen"}
+        >
+          {isSplitActive ? (
+            <>
+              <span style={{ fontSize: 12, fontWeight: 800 }}>✕</span>
+              <span>Exit Split Screen</span>
+            </>
+          ) : (
+            <>
+              <Columns size={14} />
+              <span>Split Screen</span>
+            </>
+          )}
+        </button>
+
         <button
           onClick={toggleTheme}
           style={{
@@ -246,6 +305,30 @@ function App() {
   const clearAuth = useStore((s) => s.clearAuth);
   const theme = useStore((s) => s.theme);
 
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isSplitActive = location.pathname === "/dashboard/split-view";
+
+  const handleSplitToggle = () => {
+    if (isSplitActive) {
+      navigate("/dashboard/module-1");
+    } else {
+      navigate("/dashboard/split-view");
+    }
+  };
+
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    return localStorage.getItem("sidebar-collapsed") === "true";
+  });
+
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("sidebar-collapsed", String(next));
+      return next;
+    });
+  };
+
   useEffect(() => {
     if (theme === "dark") document.documentElement.classList.add("dark");
     else document.documentElement.classList.remove("dark");
@@ -268,7 +351,7 @@ function App() {
   }
 
   return (
-    <BrowserRouter>
+    <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
       `}</style>
@@ -277,61 +360,77 @@ function App() {
 
         {/* Sidebar */}
         <aside
-          className="hidden md:flex"
-          style={{
-            position: "fixed", inset: "0 auto 0 0", zIndex: 30,
-            width: 240,
-            flexDirection: "column",
-            background: "var(--trading-surface)",
-            borderRight: "1.5px solid var(--trading-border)",
-            boxShadow: "2px 0 12px rgba(0,0,0,0.05)",
-          }}
+          className={`hidden md:flex sidebar-aside ${isSidebarCollapsed || isSplitActive ? "collapsed" : ""}`}
         >
-          {/* Logo */}
-          <div
-            style={{
-              height: 80, display: "flex", flexDirection: "column",
-              justifyContent: "center", padding: "0 20px",
-              borderBottom: "1.5px solid var(--trading-border)",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>  
+          <div style={{ width: 240, display: "flex", flexDirection: "column", height: "100%", flexShrink: 0 }}>
+            {/* Logo */}
+            <div
+              style={{
+                height: 80, display: "flex", flexDirection: "column",
+                justifyContent: "center", padding: "0 20px",
+                borderBottom: "1.5px solid var(--trading-border)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>  
+              </div>
+              <h1 style={{ fontFamily: "'Inter', sans-serif", fontSize: 30, fontWeight: 900, color: "var(--trading-text-active)", letterSpacing: "0.05em", margin: 0 }}>
+                TradePro
+              </h1>
+      
             </div>
-            <h1 style={{ fontFamily: "'Inter', sans-serif", fontSize: 30, fontWeight: 900, color: "var(--trading-text-active)", letterSpacing: "0.05em", margin: 0 }}>
-              TradePro
-            </h1>
-    
-          </div>
 
-          {/* Section label */}
-          <div style={{ padding: "18px 20px 8px" }}>
-            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 9, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.15em" }}>
-              Modules
-            </span>
-          </div>
+            {/* Section label */}
+            <div style={{ padding: "18px 20px 8px" }}>
+              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 9, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.15em" }}>
+                Modules
+              </span>
+            </div>
 
-          {/* Nav */}
-          <nav style={{ flex: 1, padding: "0 12px", display: "flex", flexDirection: "column", gap: 4 }}>
-            <NavigationLink to="/dashboard/module-1" label="Module 1 – Pivot Table" icon="M1" />
-            <NavigationLink to="/dashboard/module-2" label="Module 2 – Strike Tracker" icon="M2" />
-          </nav>          
+            {/* Nav */}
+            <nav style={{ flex: 1, padding: "0 12px", display: "flex", flexDirection: "column", gap: 4 }}>
+              <NavigationLink to="/dashboard/module-1" label="Module 1 – Pivot Table" icon="M1" />
+              <NavigationLink to="/dashboard/module-2" label="Module 2 – Strike Tracker" icon="M2" />
+              <NavigationLink to="/dashboard/split-view" label="Split View – Multi-Panel" icon="🖥️" />
+            </nav>
+          </div>
         </aside>
 
         {/* Main */}
-        <div style={{ paddingLeft: 240, flex: 1, display: "flex", flexDirection: "column", minHeight: "100vh", minWidth: 0 }} className="md:pl-[240px] pl-0">
-          <TopBar user={user} handleLogout={handleLogout} />
+        <div className={`main-layout ${isSidebarCollapsed || isSplitActive ? "collapsed" : ""}`}>
+          <TopBar
+            user={user}
+            handleLogout={handleLogout}
+            isSidebarCollapsed={isSidebarCollapsed}
+            toggleSidebar={toggleSidebar}
+            isSplitActive={isSplitActive}
+            handleSplitToggle={handleSplitToggle}
+          />
           <MobileTabs />
           <main style={{ flex: 1, overflowY: "auto" }}>
             <Routes>
               <Route path="/dashboard/module-1" element={<Module1 />} />
               <Route path="/dashboard/module-2" element={<Module2 />} />
+              <Route
+                path="/dashboard/split-view"
+                element={
+                  <div className="split-view-container">
+                    <div className="split-panel">
+                      <Module1 isSplit={true} />
+                    </div>
+                    <div className="split-panel">
+                      <Module2 isSplit={true} />
+                    </div>
+                  </div>
+                }
+              />
               <Route path="*" element={<Navigate to="/dashboard/module-1" replace />} />
             </Routes>
           </main>
         </div>
       </div>
-    </BrowserRouter>
+    </>
   );
 }
+
 
 export default App;
