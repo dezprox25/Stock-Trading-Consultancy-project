@@ -156,14 +156,13 @@ function SignalCard({ title, state, map, icon }: { title: string; state: string;
 }
 
 // ── Module 1 ──────────────────────────────────────────────────────────────────
-export const Module1 = () => {
+export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
+  const [showFullGrid, setShowFullGrid] = useState(false);
   const selectedSymbol = useStore((s) => s.selectedSymbol);
   const selectedTimeframe = useStore((s) => s.selectedTimeframe);
   const selectedMethod = useStore((s) => s.selectedMethod);
-  const setSelectedTimeframe = useStore((s) => s.setSelectedTimeframe);
   const setSelectedMethod = useStore((s) => s.setSelectedMethod);
   const prices = useStore((s) => s.prices);
-  const theme = useStore((s) => s.theme);
 
   const prevFutRef = useRef<number>(0);
   const prevSpotRef = useRef<number>(0);
@@ -220,7 +219,9 @@ export const Module1 = () => {
   const latestRow = tableRows.length > 0 ? [...tableRows].reverse()[0] : null;
   const spread    = futLtp > 0 && spotLtp > 0 ? futLtp - spotLtp : 0;
 
-  const isDark = theme === "dark";
+  const displayedRows = showFullGrid || !isSplit
+    ? [...tableRows].reverse()
+    : [...tableRows].reverse().slice(0, 12);
 
   const methodLabels: Record<string, string> = {
     classic: "Classic Pivot", camarilla: "Camarilla Pivot", fibonacci: "Fibonacci Pivot",
@@ -228,8 +229,8 @@ export const Module1 = () => {
 
   // Table cell color helpers
   const tdBase: React.CSSProperties = {
-    fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 500,
-    padding: "9px 12px", whiteSpace: "nowrap",
+    fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 500,
+    padding: "12px 16px", whiteSpace: "nowrap",
     borderBottom: "1px solid var(--trading-border)",
     color: "var(--trading-text-active)",
   };
@@ -276,9 +277,9 @@ export const Module1 = () => {
 
         .m1-th {
           font-family: 'Inter', sans-serif;
-          font-size: 10px; font-weight: 700;
+          font-size: 11px; font-weight: 700;
           letter-spacing: 0.08em; text-transform: uppercase;
-          padding: 11px 12px; white-space: nowrap;
+          padding: 12px 16px; white-space: nowrap;
           color: var(--trading-text-muted);
           background: var(--trading-bg);
           border-bottom: 1.5px solid var(--trading-border);
@@ -296,94 +297,162 @@ export const Module1 = () => {
 
       <div
         style={{
-          minHeight: "100vh", background: "var(--trading-bg)",
+          minHeight: isSplit ? "auto" : "100vh", background: isSplit ? "transparent" : "var(--trading-bg)",
           fontFamily: "'Inter', sans-serif",
         }}
       >
-        <div style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 40px", display: "flex", flexDirection: "column", gap: 20 }}>
+        <div style={{ maxWidth: "100%", margin: "0 auto", padding: isSplit ? "12px 12px 20px" : "24px 24px 40px", display: "flex", flexDirection: "column", gap: isSplit ? 12 : 20 }}>
 
           {/* Page header */}
-          <div
-            className="m1-section"
-            style={{
-              background: "var(--trading-surface)", border: "1.5px solid var(--trading-border)",
-              borderRadius: 14, padding: "18px 24px",
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-              boxShadow: "0 1px 8px rgba(0,0,0,0.05)",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: GREEN, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 2 }}>
-                  Module 01
+          {isSplit ? (
+            <div
+              className="m1-section"
+              style={{
+                background: "var(--trading-surface)",
+                border: "1.5px solid var(--trading-border)",
+                borderRadius: 10,
+                padding: "10px 16px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: GREEN, textTransform: "uppercase", letterSpacing: "0.05em" }}>M1 · Pivot</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: "var(--trading-text-active)", borderLeft: "1px solid var(--trading-border)", paddingLeft: 8 }}>{selectedSymbol}</span>
+              </div>
+              <div style={{ display: "flex", gap: 6, fontSize: 10, fontWeight: 700 }}>
+                <span style={{ background: "rgba(4,120,87,0.1)", color: GREEN, padding: "3px 8px", borderRadius: 5 }}>TF: {selectedTimeframe}</span>
+                <span style={{ background: "var(--trading-bg)", border: "1px solid var(--trading-border)", color: "var(--trading-text-muted)", padding: "3px 8px", borderRadius: 5 }}>{selectedMethod.toUpperCase()}</span>
+              </div>
+            </div>
+          ) : (
+            <div
+              className="m1-section"
+              style={{
+                background: "var(--trading-surface)", border: "1.5px solid var(--trading-border)",
+                borderRadius: 14, padding: "18px 24px",
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                boxShadow: "0 1px 8px rgba(0,0,0,0.05)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: GREEN, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 2 }}>
+                    Module 01
+                  </div>
+                  <h1 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: "var(--trading-text-active)", letterSpacing: "-0.02em" }}>
+                    Live Pivot Intelligence
+                  </h1>
                 </div>
-                <h1 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: "var(--trading-text-active)", letterSpacing: "-0.02em" }}>
-                  Live Pivot Intelligence
-                </h1>
+                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--trading-text-muted)", background: "var(--trading-bg)", padding: "3px 10px", borderRadius: 6, border: "1.5px solid var(--trading-border)" }}>
+                  {selectedSymbol}
+                </span>
               </div>
-              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--trading-text-muted)", background: "var(--trading-bg)", padding: "3px 10px", borderRadius: 6, border: "1.5px solid var(--trading-border)" }}>
-                {selectedSymbol}
-              </span>
-            </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div
-                style={{
-                  display: "flex", alignItems: "center", gap: 8, padding: "6px 14px",
-                  background: GREEN, borderRadius: 8, color: "#fff",
-                }}
-              >
-                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 600, opacity: 0.85 }}>TF</span>
-                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, fontWeight: 800 }}>{selectedTimeframe}</span>
-              </div>
-              <div
-                style={{
-                  display: "flex", flexDirection: "column", alignItems: "flex-end", padding: "6px 14px",
-                  background: "var(--trading-bg)", border: "1.5px solid var(--trading-border)",
-                  borderRadius: 8,
-                }}
-              >
-                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 9, fontWeight: 600, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Formula</span>
-                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, color: GREEN }}>{methodLabels[selectedMethod] || selectedMethod}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8, padding: "6px 14px",
+                    background: GREEN, borderRadius: 8, color: "#fff",
+                  }}
+                >
+                  <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 600, opacity: 0.85 }}>TF</span>
+                  <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, fontWeight: 800 }}>{selectedTimeframe}</span>
+                </div>
+                <div
+                  style={{
+                    display: "flex", flexDirection: "column", alignItems: "flex-end", padding: "6px 14px",
+                    background: "var(--trading-bg)", border: "1.5px solid var(--trading-border)",
+                    borderRadius: 8,
+                  }}
+                >
+                  <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 9, fontWeight: 600, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Formula</span>
+                  <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, color: GREEN }}>{methodLabels[selectedMethod] || selectedMethod}</span>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* Price cards */}
-          <div className="m1-section" style={{ display: "flex", flexWrap: "wrap", gap: 12, animationDelay: "0.05s" }}>
-            <PriceCard label="Spot LTP"     value={spotLtp}         flash={spotFlash}  sub="NIFTY-SPOT" />
-            <PriceCard label="Futures LTP"  value={futLtp}          flash={futFlash}   sub={selectedSymbol} />
-            <PriceCard label="Spread"       value={Math.abs(spread)} flash={null}      sub={spread > 0 ? "Fut Premium" : spread < 0 ? "Fut Discount" : "—"} />
-            {latestRow && <PriceCard label="Last Close" value={latestRow.close} flash={null} sub={`${latestRow.time} candle`} />}
-          </div>
+          {isSplit ? (
+            <div
+              className="m1-section"
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 12,
+                background: "var(--trading-surface)",
+                border: "1.5px solid var(--trading-border)",
+                borderRadius: 10,
+                padding: "8px 16px",
+                justifyContent: "space-between",
+                alignItems: "center",
+                boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+              }}
+            >
+              {[
+                { label: "Spot LTP", value: spotLtp, sub: "NIFTY-SPOT", flash: spotFlash },
+                { label: "Futures LTP", value: futLtp, sub: selectedSymbol, flash: futFlash },
+                { label: "Spread", value: Math.abs(spread), sub: spread > 0 ? "Premium" : "Discount", flash: null },
+                ...(latestRow ? [{ label: "Last Close", value: latestRow.close, sub: `${latestRow.time} Close`, flash: null }] : []),
+              ].map((c, idx) => {
+                const flashColor = c.flash === "up" ? GREEN : c.flash === "down" ? RED : "var(--trading-text-active)";
+                return (
+                  <div key={idx} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.02em" }}>{c.label}:</span>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: flashColor, display: "inline-flex", alignItems: "center" }}>
+                      {c.value > 0 ? c.value.toLocaleString("en-IN", { minimumFractionDigits: 1 }) : "—"}
+                      {c.flash && (
+                        <span style={{ fontSize: 10, marginLeft: 2 }}>
+                          {c.flash === "up" ? "▲" : "▼"}
+                        </span>
+                      )}
+                    </span>
+                    <span style={{ fontSize: 9, color: "var(--trading-text-muted)", fontWeight: 500 }}>({c.sub})</span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="m1-section" style={{ display: "flex", flexWrap: "wrap", gap: 12, animationDelay: "0.05s" }}>
+              <PriceCard label="Spot LTP"     value={spotLtp}         flash={spotFlash}  sub="NIFTY-SPOT" />
+              <PriceCard label="Futures LTP"  value={futLtp}          flash={futFlash}   sub={selectedSymbol} />
+              <PriceCard label="Spread"       value={Math.abs(spread)} flash={null}      sub={spread > 0 ? "Fut Premium" : spread < 0 ? "Fut Discount" : "—"} />
+              {latestRow && <PriceCard label="Last Close" value={latestRow.close} flash={null} sub={`${latestRow.time} candle`} />}
+            </div>
+          )}
 
           {/* Formula selector */}
-          <div
-            className="m1-section"
-            style={{
-              background: "var(--trading-surface)", border: "1.5px solid var(--trading-border)",
-              borderRadius: 12, padding: "14px 20px",
-              display: "flex", alignItems: "center", gap: 12,
-              animationDelay: "0.07s",
-            }}
-          >
-            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginRight: 4 }}>
-              Pivot Formula
-            </span>
-            <div style={{ width: 1, height: 20, background: "var(--trading-border)" }} />
-            {[{ key: "classic", label: "Classic" }, { key: "camarilla", label: "Camarilla" }, { key: "fibonacci", label: "Fibonacci" }].map((m) => (
-              <button
-                key={m.key}
-                onClick={() => setSelectedMethod(m.key as any)}
-                className={`m1-method-btn ${selectedMethod === m.key ? "m1-method-active" : "m1-method-inactive"}`}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
+          {!isSplit && (
+            <div
+              className="m1-section"
+              style={{
+                background: "var(--trading-surface)", border: "1.5px solid var(--trading-border)",
+                borderRadius: 12, padding: "14px 20px",
+                display: "flex", alignItems: "center", gap: 12,
+                animationDelay: "0.07s",
+              }}
+            >
+              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginRight: 4 }}>
+                Pivot Formula
+              </span>
+              <div style={{ width: 1, height: 20, background: "var(--trading-border)" }} />
+              {[{ key: "classic", label: "Classic" }, { key: "camarilla", label: "Camarilla" }, { key: "fibonacci", label: "Fibonacci" }].map((m) => (
+                <button
+                  key={m.key}
+                  onClick={() => setSelectedMethod(m.key as any)}
+                  className={`m1-method-btn ${selectedMethod === m.key ? "m1-method-active" : "m1-method-inactive"}`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Pivot levels */}
-          {latestRow && (
+          {!isSplit && latestRow && (
             <div
               className="m1-section"
               style={{
@@ -407,7 +476,7 @@ export const Module1 = () => {
           )}
 
           {/* Signal cards */}
-          {latestRow && (
+          {!isSplit && latestRow && (
             <div className="m1-section" style={{ display: "flex", gap: 14, animationDelay: "0.11s" }}>
               <SignalCard
                 title="Call Signal — Latest"
@@ -450,53 +519,69 @@ export const Module1 = () => {
                 <thead>
                   <tr>
                     {[
-                      { label: "Time",        align: "left"   },
-                      { label: "Spot LTP",    align: "right"  },
-                      { label: "Fut LTP",     align: "right"  },
-                      { label: "Open",        align: "right"  },
-                      { label: "High",        align: "right"  },
-                      { label: "Close",       align: "right"  },
-                      { label: "P",           align: "center" },
-                      { label: "R1",          align: "center" },
-                      { label: "R2",          align: "center" },
-                      { label: "R3",          align: "center" },
-                      { label: "S1",          align: "center" },
-                      { label: "S2",          align: "center" },
-                      { label: "S3",          align: "center" },
-                      { label: "Call Signal", align: "center" },
-                      { label: "Put Signal",  align: "center" },
-                    ].map((h, i) => (
-                      <th
-                        key={i}
-                        className="m1-th"
-                        style={{
-                          textAlign: h.align as any,
-                          color: i >= 7 && i <= 9 ? GREEN : i >= 10 && i <= 12 ? RED : "var(--trading-text-muted)",
-                          borderLeft: i === 6 || i === 13 ? "1px solid var(--trading-border)" : undefined,
-                        }}
-                      >
-                        {h.label}
-                      </th>
-                    ))}
+                      { label: "Time",        align: "left",    key: "time" },
+                      { label: "Spot LTP",    align: "right",   key: "spot" },
+                      { label: "Fut LTP",     align: "right",   key: "fut" },
+                      { label: "Open",        align: "right",   key: "open" },
+                      { label: "High",        align: "right",   key: "high" },
+                      { label: "Close",       align: "right",   key: "close" },
+                      { label: "P",           align: "center",  key: "p" },
+                      { label: "R1",          align: "center",  key: "r1" },
+                      { label: "R2",          align: "center",  key: "r2" },
+                      { label: "R3",          align: "center",  key: "r3" },
+                      { label: "S1",          align: "center",  key: "s1" },
+                      { label: "S2",          align: "center",  key: "s2" },
+                      { label: "S3",          align: "center",  key: "s3" },
+                      { label: "Call Signal", align: "center",  key: "call" },
+                      { label: "Put Signal",  align: "center",  key: "put" },
+                    ].filter((h) => {
+                      if (isSplit && !showFullGrid) {
+                        return !["open", "high", "spot", "fut", "r1", "r2", "r3", "s1", "s2", "s3"].includes(h.key);
+                      }
+                      if (isSplit) {
+                        return !["open", "high", "r2", "r3", "s2", "s3"].includes(h.key);
+                      }
+                      return true;
+                    }).map((h) => {
+                      const isP = h.key === "p";
+                      const isResistance = ["r1", "r2", "r3"].includes(h.key);
+                      const isSupport = ["s1", "s2", "s3"].includes(h.key);
+                      const isSignalStart = h.key === "call";
+
+                      let color = "var(--trading-text-muted)";
+                      if (isResistance) color = GREEN;
+                      else if (isSupport) color = RED;
+
+                      return (
+                        <th
+                          key={h.key}
+                          className="m1-th"
+                          style={{
+                            textAlign: h.align as any,
+                            color,
+                            borderLeft: isP || isSignalStart ? "1px solid var(--trading-border)" : undefined,
+                            padding: isSplit ? "12px 14px" : "12px 16px",
+                            fontSize: isSplit ? "11px" : "11px",
+                          }}
+                        >
+                          {h.label}
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody>
                   {isLoading ? (
-                    <tr><td colSpan={15} style={{ ...tdBase, textAlign: "center", padding: "32px 0", color: "var(--trading-text-muted)" }}>Loading market data…</td></tr>
+                    <tr><td colSpan={isSplit ? (showFullGrid ? 9 : 5) : 15} style={{ ...tdBase, textAlign: "center", padding: "32px 0", color: "var(--trading-text-muted)" }}>Loading market data…</td></tr>
                   ) : tableRows.length === 0 ? (
-                    <tr><td colSpan={15} style={{ ...tdBase, textAlign: "center", padding: "32px 0", color: "var(--trading-text-muted)" }}>Awaiting finalized timeframe boundaries.</td></tr>
+                    <tr><td colSpan={isSplit ? (showFullGrid ? 9 : 5) : 15} style={{ ...tdBase, textAlign: "center", padding: "32px 0", color: "var(--trading-text-muted)" }}>Awaiting finalized timeframe boundaries.</td></tr>
                   ) : (
-                    [...tableRows].reverse().map((row, idx) => {
+                    displayedRows.map((row, idx) => {
                       const isLatest = idx === 0;
                       const displaySpot = isLatest && spotLtp > 0 ? spotLtp : row.close - 35;
                       const displayFut  = isLatest && futLtp > 0  ? futLtp  : row.close;
                       const callProps   = getIndicatorProps(row.callState, true);
                       const putProps    = getIndicatorProps(row.putState, false);
-
-                      const isCallBull  = row.callState.includes("BULLISH") || row.callState.includes("POSITIVE");
-                      const isCallBear  = row.callState.includes("BEARISH");
-                      const isPutBull   = row.putState.includes("BULLISH") || row.putState.includes("POSITIVE");
-                      const isPutBear   = row.putState.includes("BEARISH");
 
                       const callBadge: React.CSSProperties = {
                         background: callProps.bg,
@@ -513,34 +598,42 @@ export const Module1 = () => {
                           className="m1-tr"
                           style={{ background: isLatest ? "rgba(4,120,87,0.04)" : "transparent", transition: "background 0.15s" }}
                         >
-                          <td style={{ ...tdBase, fontWeight: isLatest ? 700 : 500, color: isLatest ? GREEN : "var(--trading-text-active)" }}>
+                          <td style={{ ...tdBase, padding: isSplit ? "12px 14px" : "12px 16px", fontSize: isSplit ? "12px" : "13px", fontWeight: isLatest ? 700 : 500, color: isLatest ? GREEN : "var(--trading-text-active)" }}>
                             {row.time}
-                            {isLatest && (
+                            {isLatest && !isSplit && (
                               <span style={{ marginLeft: 8, padding: "2px 6px", borderRadius: 4, background: "rgba(4,120,87,0.12)", color: GREEN, fontSize: 9, fontWeight: 700, letterSpacing: "0.08em" }}>
                                 LIVE
                               </span>
                             )}
                           </td>
-                          <td style={{ ...tdBase, textAlign: "right", fontWeight: isLatest ? 700 : 500, color: isLatest && spotFlash === "up" ? GREEN : isLatest && spotFlash === "down" ? RED : "var(--trading-text-active)", transition: "color 0.3s" }}>
-                            {displaySpot.toFixed(1)}
-                          </td>
-                          <td style={{ ...tdBase, textAlign: "right", fontWeight: isLatest ? 700 : 500, color: isLatest && futFlash === "up" ? GREEN : isLatest && futFlash === "down" ? RED : "var(--trading-text-active)", transition: "color 0.3s" }}>
-                            {displayFut.toFixed(1)}
-                          </td>
-                          <td style={{ ...tdBase, textAlign: "right", color: "var(--trading-text-muted)" }}>{row.open.toFixed(1)}</td>
-                          <td style={{ ...tdBase, textAlign: "right", color: "var(--trading-text-muted)" }}>{row.high.toFixed(1)}</td>
-                          <td style={{ ...tdBase, textAlign: "right", fontWeight: 600 }}>{row.close.toFixed(1)}</td>
-                          <td style={{ ...tdBase, textAlign: "center", borderLeft: "1px solid var(--trading-border)", fontWeight: 600 }}>{row.pivots.p.toFixed(1)}</td>
-                          <td style={{ ...tdBase, textAlign: "center", color: GREEN, fontWeight: 600 }}>{row.pivots.r1.toFixed(1)}</td>
-                          <td style={{ ...tdBase, textAlign: "center", color: GREEN }}>{row.pivots.r2.toFixed(1)}</td>
-                          <td style={{ ...tdBase, textAlign: "center", color: GREEN }}>{row.pivots.r3.toFixed(1)}</td>
-                          <td style={{ ...tdBase, textAlign: "center", color: RED, fontWeight: 600 }}>{row.pivots.s1.toFixed(1)}</td>
-                          <td style={{ ...tdBase, textAlign: "center", color: RED }}>{row.pivots.s2.toFixed(1)}</td>
-                          <td style={{ ...tdBase, textAlign: "center", color: RED }}>{row.pivots.s3.toFixed(1)}</td>
-                          <td style={{ ...tdBase, textAlign: "center", borderLeft: "1px solid var(--trading-border)" }}>
+                          {(!isSplit || showFullGrid) && (
+                            <td style={{ ...tdBase, padding: isSplit ? "12px 14px" : "12px 16px", fontSize: isSplit ? "12px" : "13px", textAlign: "right", fontWeight: isLatest ? 700 : 500, color: isLatest && spotFlash === "up" ? GREEN : isLatest && spotFlash === "down" ? RED : "var(--trading-text-active)", transition: "color 0.3s" }}>
+                              {displaySpot.toFixed(1)}
+                            </td>
+                          )}
+                          {(!isSplit || showFullGrid) && (
+                            <td style={{ ...tdBase, padding: isSplit ? "12px 14px" : "12px 16px", fontSize: isSplit ? "12px" : "13px", textAlign: "right", fontWeight: isLatest ? 700 : 500, color: isLatest && futFlash === "up" ? GREEN : isLatest && futFlash === "down" ? RED : "var(--trading-text-active)", transition: "color 0.3s" }}>
+                              {displayFut.toFixed(1)}
+                            </td>
+                          )}
+                          {!isSplit && <td style={{ ...tdBase, padding: "12px 16px", color: "var(--trading-text-muted)" }}>{row.open.toFixed(1)}</td>}
+                          {!isSplit && <td style={{ ...tdBase, padding: "12px 16px", color: "var(--trading-text-muted)" }}>{row.high.toFixed(1)}</td>}
+                          <td style={{ ...tdBase, padding: isSplit ? "12px 14px" : "12px 16px", fontSize: isSplit ? "12px" : "13px", textAlign: "right", fontWeight: 600 }}>{row.close.toFixed(1)}</td>
+                          <td style={{ ...tdBase, padding: isSplit ? "12px 14px" : "12px 16px", fontSize: isSplit ? "12px" : "13px", textAlign: "center", borderLeft: "1px solid var(--trading-border)", fontWeight: 600 }}>{row.pivots.p.toFixed(1)}</td>
+                          {(!isSplit || showFullGrid) && (
+                            <td style={{ ...tdBase, padding: isSplit ? "12px 14px" : "12px 16px", fontSize: isSplit ? "12px" : "13px", textAlign: "center", color: GREEN, fontWeight: 600 }}>{row.pivots.r1.toFixed(1)}</td>
+                          )}
+                          {!isSplit && <td style={{ ...tdBase, padding: "12px 16px", textAlign: "center", color: GREEN }}>{row.pivots.r2.toFixed(1)}</td>}
+                          {!isSplit && <td style={{ ...tdBase, padding: "12px 16px", textAlign: "center", color: GREEN }}>{row.pivots.r3.toFixed(1)}</td>}
+                          {(!isSplit || showFullGrid) && (
+                            <td style={{ ...tdBase, padding: isSplit ? "12px 14px" : "12px 16px", fontSize: isSplit ? "12px" : "13px", textAlign: "center", color: RED, fontWeight: 600 }}>{row.pivots.s1.toFixed(1)}</td>
+                          )}
+                          {!isSplit && <td style={{ ...tdBase, padding: "12px 16px", textAlign: "center", color: RED }}>{row.pivots.s2.toFixed(1)}</td>}
+                          {!isSplit && <td style={{ ...tdBase, padding: "12px 16px", textAlign: "center", color: RED }}>{row.pivots.s3.toFixed(1)}</td>}
+                          <td style={{ ...tdBase, padding: isSplit ? "12px 14px" : "12px 16px", fontSize: isSplit ? "12px" : "13px", textAlign: "center", borderLeft: "1px solid var(--trading-border)" }}>
                             <span className="m1-badge" style={callBadge}>{callProps.label}</span>
                           </td>
-                          <td style={{ ...tdBase, textAlign: "center" }}>
+                          <td style={{ ...tdBase, padding: isSplit ? "12px 14px" : "12px 16px", fontSize: isSplit ? "12px" : "13px", textAlign: "center" }}>
                             <span className="m1-badge" style={putBadge}>{putProps.label}</span>
                           </td>
                         </tr>
@@ -550,6 +643,27 @@ export const Module1 = () => {
                 </tbody>
               </table>
             </div>
+            {isSplit && (
+              <button
+                onClick={() => setShowFullGrid(!showFullGrid)}
+                style={{
+                  marginTop: 8,
+                  width: "100%",
+                  padding: "6px 12px",
+                  borderRadius: 8,
+                  border: "1.5px solid var(--trading-border)",
+                  background: "var(--trading-surface)",
+                  color: "var(--trading-text-muted)",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  transition: "all 0.15s",
+                }}
+                className="secondary-btn"
+              >
+                {showFullGrid ? "Collapse to Compact Grid ▲" : `Show Full Grid (${tableRows.length} Rows, 9 Columns) ▼`}
+              </button>
+            )}
           </div>
 
         </div>
