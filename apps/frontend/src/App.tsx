@@ -307,8 +307,7 @@ function App() {
 
   const navigate = useNavigate();
   const location = useLocation();
-  const isSplitActive = location.pathname === "/dashboard/split-view";
-
+const isSplitActive = location.pathname.includes("split");
   const handleSplitToggle = () => {
     if (isSplitActive) {
       navigate("/dashboard/module-1");

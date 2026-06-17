@@ -34,13 +34,72 @@ const io = new Server(server, {
 
 // Security & utility middlewares
 app.use(helmet());
+
 app.use(
   cors({
-    origin: "*", // In production this will match the client URL
+    origin: "*",
     credentials: true,
   })
 );
+
 app.use(express.json());
+
+// Global Rate Limiter
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  message: { error: "Too many requests, please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use("/api/", globalLimiter);
+
+// Module 1 Config Endpoint
+app.get("/module1/config", (_req, res) => {
+  res.json({
+    symbols: ["NIFTY-FUT", "NIFTY-SPOT"],
+    timeframes: ["1m", "3m", "5m"],
+    pivotMethods: ["classic", "camarilla", "fibonacci"],
+    defaultSymbol: "NIFTY-FUT",
+    defaultTimeframe: "5m",
+    defaultMethod: "classic",
+  });
+});
+
+app.get("/api/module1/config", (_req, res) => {
+  res.json({
+    symbols: ["NIFTY-FUT", "NIFTY-SPOT"],
+    timeframes: ["1m", "3m", "5m"],
+    pivotMethods: ["classic", "camarilla", "fibonacci"],
+    defaultSymbol: "NIFTY-FUT",
+    defaultTimeframe: "5m",
+    defaultMethod: "classic",
+  });
+});
+
+// Module 2 Tracker Endpoint
+app.get("/module2/tracker", (_req, res) => {
+  res.json({
+    sessionType: "mixed",
+    indexSymbol: "NIFTY50",
+    expiryDate: "2026-06-04",
+    selectedStrikes: [],
+    strikes: {},
+    mode: "mock",
+  });
+});
+
+app.get("/api/module2/tracker", (_req, res) => {
+  res.json({
+    sessionType: "mixed",
+    indexSymbol: "NIFTY50",
+    expiryDate: "2026-06-04",
+    selectedStrikes: [],
+    strikes: {},
+    mode: "mock",
+  });
+});
 
 // Mount authentication router
 app.use("/auth", authRouter);
@@ -50,18 +109,8 @@ app.use("/api/auth", authRouter);
 app.use("/api", marketRouter);
 app.use("/api/module2", trackerRouter);
 
-// Global Rate Limiter (Applied to general REST routes)
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200, // Limit each IP to 200 requests per window
-  message: { error: "Too many requests, please try again later." },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use("/api/", globalLimiter);
-
 // Health Check Endpoint
-app.get("/health", async (req, res) => {
+app.get("/health", async (_req, res) => {
   const mongoStatus = mongooseConnectionStatus();
   let redisStatus = "disconnected";
 
@@ -90,18 +139,27 @@ function mongooseConnectionStatus() {
     2: "connecting",
     3: "disconnecting",
   };
+
   const mongoose = require("mongoose");
   return states[mongoose.connection.readyState] || "unknown";
 }
 
 // Global Error Handler
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error("Unhandled Application Error:", err);
-  res.status(500).json({
-    error: "Internal Server Error",
-    message: process.env.NODE_ENV === "development" ? err.message : undefined,
-  });
-});
+app.use(
+  (
+    err: any,
+    _req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction
+  ) => {
+    console.error("Unhandled Application Error:", err);
+
+    res.status(500).json({
+      error: "Internal Server Error",
+      message: process.env.NODE_ENV === "development" ? err.message : undefined,
+    });
+  }
+);
 
 const PORT = process.env.PORT || 5001;
 

@@ -886,7 +886,7 @@ function StrikeTrackerTable({ strikesList, session, sortedTimestamps, highlightT
                 const isTop3 = highlightTop3 && topStrikes.includes(strike);
                 const isCE = parsed.optionType === "CE";
 
-                const rowBg = s.isDeepLoss ? "rgba(229,57,53,0.03)" : s.isDowntrendActive ? "rgba(217,119,6,0.03)" : "transparent";
+                const rowBg = s.isDeepLoss ? "rgba(107,114,128,0.08)" : s.isDowntrendActive ? "rgba(37, 99, 235, 0.08)" : "transparent";
                 // sticky cell needs a solid background
                 const stickyBg = s.isDeepLoss
                   ? "rgba(255,242,242,0.98)"
@@ -904,10 +904,18 @@ function StrikeTrackerTable({ strikesList, session, sortedTimestamps, highlightT
 
                 return (
                   <tr
-                    key={strike}
-                    className="m2-tr"
-                    style={{ background: rowBg, borderLeft: isTop3 ? `3px solid ${AMBER}` : undefined }}
-                  >
+  key={strike}
+  className={`m2-tr ${
+    isTop3
+      ? "border-gold-signal"
+      : s.isDeepLoss
+      ? "border-red-signal"
+      : s.trendBadge === "L_TO_H"
+      ? "border-green-signal"
+      : ""
+  } ${s.trendBadge === "REVERSAL" ? "animate-reversal-border" : ""}`}
+  //style={{ background: rowBg }}
+>
                     {/* Sticky strike cell */}
                     <td className="m2-td m2-sticky-cell" style={{ 
                       padding: cellPadding, 
@@ -966,17 +974,29 @@ function StrikeTrackerTable({ strikesList, session, sortedTimestamps, highlightT
                       if (!cell) return <td key={ts} className="m2-td" style={{ padding: cellPadding, fontSize: cellFontSize, textAlign: "center", color: "var(--trading-text-muted)" }}>—</td>;
                       const isCellHigh = cell.ltp === s.dayHigh && s.dayHigh > 0;
                       const isCellLow  = cell.ltp === s.dayLow  && s.dayLow  > 0;
+                      const isLatestCell = ts === sortedTimestamps[sortedTimestamps.length - 1];
                       return (
                         <td
-                          key={ts}
-                          className="m2-td"
+                           key={ts}
+  className={`m2-td ${isLatestCell ? "animate-blue-live-pulse" : ""} ${
+    s.isDowntrendActive || s.isDeepLoss ? "bg-call-down-stripes" : ""
+  }`}
                           title={`${cell.timestamp} · ${cell.ltp}`}
                           style={{
                             padding: cellPadding,
                             fontSize: cellFontSize,
                             textAlign: "center",
-                            background: isCellHigh ? "rgba(4,120,87,0.1)" : isCellLow ? "rgba(229,57,53,0.08)" : undefined,
-                            color: isCellHigh ? GREEN : isCellLow ? RED : "var(--trading-text-active)",
+                            background: isCellHigh
+  ? "rgba(37, 99, 235, 0.10)"
+  : isCellLow
+  ? "rgba(107, 114, 128, 0.10)"
+  : undefined,
+
+color: isCellHigh
+  ? "#2563EB"
+  : isCellLow
+  ? "#6B7280"
+  : "var(--trading-text-active)",
                             fontWeight: isCellHigh || isCellLow ? 700 : 400,
                           }}
                         >
@@ -996,7 +1016,7 @@ function StrikeTrackerTable({ strikesList, session, sortedTimestamps, highlightT
                         zIndex: isSplit ? 20 : undefined, 
                         background: summaryBg, 
                         borderLeft: isSplit ? "3px solid var(--trading-border)" : "1px solid var(--trading-border)", 
-                        color: GREEN, 
+                        color: "#2563eb", 
                         fontWeight: 700, 
                         minWidth: 80, 
                         width: 80 
@@ -1015,7 +1035,7 @@ function StrikeTrackerTable({ strikesList, session, sortedTimestamps, highlightT
                         right: isSplit ? 0 : undefined, 
                         zIndex: isSplit ? 20 : undefined, 
                         background: summaryBg, 
-                        color: RED, 
+                        color: "#6b7280", 
                         fontWeight: 700, 
                         minWidth: 80, 
                         width: 80 

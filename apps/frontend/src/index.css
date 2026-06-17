@@ -100,18 +100,19 @@ textarea {
 /* Live tick pulse */
 @keyframes bluePulse {
   0% {
-    background-color: rgba(37, 99, 235, 0.22);
+    background-color: rgba(37, 99, 235, 0.25);
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.35);
   }
 
   100% {
     background-color: transparent;
+    box-shadow: 0 0 0 8px rgba(37, 99, 235, 0);
   }
 }
 
-.animate-tick-pulse {
-  animation: bluePulse 0.4s ease-out 1;
+.animate-blue-pulse {
+  animation: bluePulse 0.45s ease-out 1;
 }
-
 /* Reversal flash */
 @keyframes orangeFlash {
   0% {
@@ -137,14 +138,7 @@ textarea {
 
 /* Call-down warning stripes */
 .bg-call-down-stripes {
-  background-image: repeating-linear-gradient(
-    -45deg,
-    transparent,
-    transparent 8px,
-    rgba(239, 68, 68, 0.08) 8px,
-    rgba(239, 68, 68, 0.08) 16px
-  );
-  background-size: 24px 24px;
+  background: rgba(239, 68, 68, 0.06);
 }
 
 /* Millennial readable UI helpers */
@@ -343,4 +337,4 @@ textarea {
     overflow-y: visible;
   }
 }
-
+
