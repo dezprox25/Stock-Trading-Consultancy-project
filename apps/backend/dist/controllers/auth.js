@@ -25,49 +25,46 @@ const getCookie = (req, name) => {
     }, {});
     return cookies[name] || null;
 };
-// User Registration
+// User Registration — saves user active, no OTP
 const register = async (req, res) => {
     try {
         const parseResult = shared_1.RegisterSchema.safeParse(req.body);
         if (!parseResult.success) {
             return res.status(400).json({ error: "Validation failed", details: parseResult.error.errors });
         }
-        const { email, password, name } = parseResult.data;
-        let existingUser = null;
-        try {
-            existingUser = await User_1.User.findOne({ email });
-        }
-        catch (err) {
-            console.warn("[Auth] DB offline during registration. Continuing in-memory.");
-        }
+        const { username, password, name } = parseResult.data;
+        const existingUser = await User_1.User.findOne({ username });
         if (existingUser) {
-            return res.status(409).json({ error: "Email is already registered" });
+            return res.status(409).json({ error: "Username is already registered" });
         }
         const hashedPassword = await bcrypt_1.default.hash(password, 12);
-        let userId = "60c72b2f9b1d8a0015f8e567";
-        try {
-            const newUser = await User_1.User.create({
-                email,
-                password: hashedPassword,
-                name,
-                status: "active",
-            });
-            userId = newUser._id.toString();
-            await Watchlist_1.Watchlist.create({
-                user_id: newUser._id,
-                symbols_json: [],
-                column_prefs_json: {},
-            });
-        }
-        catch (err) {
-            console.warn("[Auth] MongoDB offline. Simulating user entry in memory.");
-        }
+        const newUser = await User_1.User.create({
+            username,
+            password: hashedPassword,
+            name: name || username,
+            status: "active",
+        });
+        await Watchlist_1.Watchlist.create({
+            user_id: newUser._id,
+            symbols_json: [],
+            column_prefs_json: {},
+        });
+        // Auto-login with JWT
+        const accessToken = (0, token_1.generateAccessToken)(newUser._id.toString());
+        const refreshToken = (0, token_1.generateRefreshToken)(newUser._id.toString());
+        res.cookie("refresh", refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "strict",
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+        });
         return res.status(201).json({
-            message: "User registered successfully",
+            message: "Account created successfully!",
+            accessToken,
             user: {
-                id: userId,
-                email,
-                name,
+                id: newUser._id,
+                username: newUser.username,
+                name: newUser.name || newUser.username,
             },
         });
     }
@@ -77,34 +74,20 @@ const register = async (req, res) => {
     }
 };
 exports.register = register;
-// User Login
+// User Login — checks username and password, returns JWT
 const login = async (req, res) => {
     try {
         const parseResult = shared_1.LoginSchema.safeParse(req.body);
         if (!parseResult.success) {
             return res.status(400).json({ error: "Validation failed", details: parseResult.error.errors });
         }
-        const { email, password } = parseResult.data;
-        let user = null;
-        let match = false;
-        try {
-            user = await User_1.User.findOne({ email });
-            if (user) {
-                match = await bcrypt_1.default.compare(password, user.password);
-            }
+        const { username, password } = parseResult.data;
+        const user = await User_1.User.findOne({ username });
+        if (!user) {
+            return res.status(401).json({ error: "Invalid credentials" });
         }
-        catch (err) {
-            console.warn("[Auth] MongoDB offline. Logging in with mock guest profile.");
-            // Fallback: allow sign-in with default values if DB is down
-            user = {
-                _id: "60c72b2f9b1d8a0015f8e567",
-                email,
-                name: "Intraday Guest Trader",
-                status: "active",
-            };
-            match = true;
-        }
-        if (!user || user.status === "inactive" || !match) {
+        const match = await bcrypt_1.default.compare(password, user.password);
+        if (!match || user.status === "inactive") {
             return res.status(401).json({ error: "Invalid credentials" });
         }
         const accessToken = (0, token_1.generateAccessToken)(user._id.toString());
@@ -119,8 +102,8 @@ const login = async (req, res) => {
             accessToken,
             user: {
                 id: user._id,
-                email: user.email,
-                name: user.name,
+                username: user.username,
+                name: user.name || user.username,
             },
         });
     }
@@ -138,18 +121,7 @@ const refresh = async (req, res) => {
             return res.status(401).json({ error: "Refresh token not provided" });
         }
         const decoded = (0, token_1.verifyRefreshToken)(refreshToken);
-        let user = null;
-        try {
-            user = await User_1.User.findById(decoded.userId);
-        }
-        catch (err) {
-            // Fallback if DB is down
-            user = {
-                _id: decoded.userId,
-                name: "Intraday Guest Trader",
-                status: "active",
-            };
-        }
+        const user = await User_1.User.findById(decoded.userId);
         if (!user || user.status === "inactive") {
             return res.status(401).json({ error: "User is no longer active" });
         }
@@ -167,7 +139,6 @@ exports.refresh = refresh;
 // User Logout
 const logout = async (req, res) => {
     try {
-        // Extract access token from authorization header to blacklist it
         const authHeader = req.headers.authorization;
         if (authHeader && authHeader.startsWith("Bearer ")) {
             const token = authHeader.split(" ")[1];
@@ -176,16 +147,12 @@ const logout = async (req, res) => {
                 if (decoded && decoded.exp) {
                     const ttl = Math.max(0, decoded.exp - Math.floor(Date.now() / 1000));
                     if (ttl > 0) {
-                        // Blacklist the token in Redis for its remaining life
                         await redis_1.default.setex(`blacklist:${token}`, ttl, "1");
                     }
                 }
             }
-            catch (err) {
-                // Ignore parsing errors for invalid token formats on logout
-            }
+            catch (_) { }
         }
-        // Clear the refresh token cookie
         res.clearCookie("refresh", {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",

@@ -13,6 +13,7 @@ router.get("/market/futures/:symbol", auth_1.authenticate, market_1.getFuturesDa
 router.get("/market/ohlc/:symbol/:tf", auth_1.authenticate, market_1.getOHLCBars);
 router.get("/market/pivots/:symbol/:tf", auth_1.authenticate, market_1.getPivotLevelsEndpoint);
 router.get("/market/option-chain/:index", auth_1.authenticate, market_1.getOptionChain);
+router.post("/market/custom-timeframe", auth_1.authenticate, market_1.updateCustomTimeframe);
 // Module 1 Indicators
 router.get("/module1/indicators/:symbol", auth_1.authenticate, market_1.getIndicatorsEndpoint);
 exports.default = router;

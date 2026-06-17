@@ -101,8 +101,8 @@ export interface Module2SessionData {
 // User Profile interface
 export interface UserSession {
   id: string;
-  email: string;
-  name: string;
+  username: string;
+  name?: string;
   status: "active" | "inactive";
   createdAt: Date;
 }

@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getOptionChain = exports.getIndicatorsEndpoint = exports.getPivotLevelsEndpoint = exports.getOHLCBars = exports.getFuturesData = exports.getSpotPrice = exports.updateWatchlist = exports.getWatchlist = void 0;
+exports.updateCustomTimeframe = exports.getOptionChain = exports.getIndicatorsEndpoint = exports.getPivotLevelsEndpoint = exports.getOHLCBars = exports.getFuturesData = exports.getSpotPrice = exports.updateWatchlist = exports.getWatchlist = void 0;
 const Watchlist_1 = require("../models/Watchlist");
 const FuturesOHLC_1 = require("../models/FuturesOHLC");
 const redis_1 = __importDefault(require("../config/redis"));
@@ -254,3 +254,36 @@ const getOptionChain = async (req, res) => {
     }
 };
 exports.getOptionChain = getOptionChain;
+// Update custom timeframe config
+const updateCustomTimeframe = async (req, res) => {
+    try {
+        const { timeframe } = req.body; // e.g. "10m"
+        if (!timeframe || typeof timeframe !== "string" || !timeframe.endsWith("m")) {
+            return res.status(400).json({ error: "Invalid timeframe format. Expected e.g. '10m'" });
+        }
+        const minutes = parseInt(timeframe);
+        if (isNaN(minutes) || minutes <= 0) {
+            return res.status(400).json({ error: "Invalid timeframe duration" });
+        }
+        // Save custom timeframe to Redis
+        await redis_1.default.set("config:custom_timeframe", timeframe);
+        // Clear old custom timeframe database records so they restart cleanly
+        try {
+            await FuturesOHLC_1.FuturesOHLC.deleteMany({ timeframe });
+            console.log(`[Market] Cleared old OHLC bars for custom timeframe: ${timeframe}`);
+        }
+        catch (dbErr) {
+            // ignore db errors in offline mode
+        }
+        return res.status(200).json({
+            message: "Custom timeframe updated successfully",
+            timeframe,
+            minutes
+        });
+    }
+    catch (error) {
+        console.error("Update Custom Timeframe Error:", error);
+        return res.status(500).json({ error: "Internal Server Error" });
+    }
+};
+exports.updateCustomTimeframe = updateCustomTimeframe;
