@@ -83,6 +83,19 @@ const processIncomingTick = async (tick) => {
         await (0, ohlcAggregator_1.aggregateOHLC)(tick, 1, "1m");
         await (0, ohlcAggregator_1.aggregateOHLC)(tick, 3, "3m");
         await (0, ohlcAggregator_1.aggregateOHLC)(tick, 5, "5m");
+        // Dynamically aggregate custom timeframe
+        try {
+            const customTf = await redis_1.default.get("config:custom_timeframe");
+            if (customTf && customTf.endsWith("m")) {
+                const minutes = parseInt(customTf);
+                if (minutes > 0 && minutes !== 1 && minutes !== 3 && minutes !== 5) {
+                    await (0, ohlcAggregator_1.aggregateOHLC)(tick, minutes, customTf);
+                }
+            }
+        }
+        catch (err) {
+            // ignore Redis read errors in offline mode
+        }
     }
     // 3. Forward tick to live websocket broadcaster callback
     if (onTickReceived) {

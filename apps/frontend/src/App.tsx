@@ -302,12 +302,15 @@ function MobileTabs() {
 // ── Root app ──────────────────────────────────────────────────────────────────
 function App() {
   const user = useStore((s) => s.user);
+  const setAuth = useStore((s) => s.setAuth);
   const clearAuth = useStore((s) => s.clearAuth);
   const theme = useStore((s) => s.theme);
 
+  const [isInitializing, setIsInitializing] = useState(true);
+
   const navigate = useNavigate();
   const location = useLocation();
-const isSplitActive = location.pathname.includes("split");
+  const isSplitActive = location.pathname.includes("split");
   const handleSplitToggle = () => {
     if (isSplitActive) {
       navigate("/dashboard/module-1");
@@ -329,6 +332,25 @@ const isSplitActive = location.pathname.includes("split");
   };
 
   useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const response = await fetch("/auth/refresh", { method: "POST" });
+        if (response.ok) {
+          const data = await response.json();
+          if (data.accessToken && data.user) {
+            setAuth(data.user, data.accessToken);
+          }
+        }
+      } catch (err) {
+        console.warn("[App] Silent auth refresh failed:", err);
+      } finally {
+        setIsInitializing(false);
+      }
+    };
+    checkAuth();
+  }, [setAuth]);
+
+  useEffect(() => {
     if (theme === "dark") document.documentElement.classList.add("dark");
     else document.documentElement.classList.remove("dark");
   }, [theme]);
@@ -340,6 +362,17 @@ const isSplitActive = location.pathname.includes("split");
     catch (err) { console.error("Logout request failed:", err); }
     finally { clearAuth(); }
   };
+
+  if (isInitializing) {
+    return (
+      <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", background: "var(--trading-bg)", color: "var(--trading-text-muted)", fontFamily: "'Inter', sans-serif", fontSize: 14, fontWeight: 600 }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+          <span style={{ width: 30, height: 30, borderRadius: "50%", border: `3.5px solid ${GREEN}`, borderTopColor: "transparent", display: "inline-block" }} className="animate-spin" />
+          Synchronising session…
+        </div>
+      </div>
+    );
+  }
 
   if (!user) {
     return (

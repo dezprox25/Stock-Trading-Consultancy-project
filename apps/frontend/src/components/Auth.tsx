@@ -5,28 +5,24 @@ import { LoginSchema, RegisterSchema } from "@stock/shared";
 
 const GREEN = "#047857";
 
-type Mode = "login" | "register" | "verify-otp";
+type Mode = "login" | "register";
 
 export const Auth: React.FC = () => {
   const setAuth = useStore((s) => s.setAuth);
 
   const [mode, setMode] = useState<Mode>("login");
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
-  const [otp, setOtp] = useState("");
-  const [pendingEmail, setPendingEmail] = useState("");
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [serverError, setServerError] = useState("");
-  const [serverInfo, setServerInfo] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
   const reset = () => {
     setErrors({});
     setServerError("");
-    setServerInfo("");
   };
 
   // ── Login ──────────────────────────────────────────────────────────────────
@@ -35,7 +31,7 @@ export const Auth: React.FC = () => {
       e.preventDefault();
       reset();
 
-      const result = LoginSchema.safeParse({ email, password });
+      const result = LoginSchema.safeParse({ username, password });
       if (!result.success) {
         const fe: Record<string, string> = {};
         result.error.errors.forEach((err) => {
@@ -48,21 +44,15 @@ export const Auth: React.FC = () => {
 
       setIsLoading(true);
       try {
-        const response = await api.post("/auth/login", { email, password }, { skipAuth: true });
+        const response = await api.post("/auth/login", { username, password }, { skipAuth: true });
         setIsSuccess(true);
         setTimeout(() => setAuth(response.user, response.accessToken), 800);
       } catch (err: any) {
         setIsLoading(false);
-        if (err?.requiresVerification) {
-          setPendingEmail(err.email || email);
-          setMode("verify-otp");
-          setServerInfo("OTP sent to your email. Please verify to continue.");
-        } else {
-          setServerError(err?.message || "Login failed. Please check your credentials.");
-        }
+        setServerError(err?.message || "Login failed. Please check your credentials.");
       }
     },
-    [email, password, setAuth]
+    [username, password, setAuth]
   );
 
   // ── Register ────────────────────────────────────────────────────────────────
@@ -71,7 +61,8 @@ export const Auth: React.FC = () => {
       e.preventDefault();
       reset();
 
-      const result = RegisterSchema.safeParse({ email, password, name });
+      const nameVal = name.trim() || undefined;
+      const result = RegisterSchema.safeParse({ username, password, name: nameVal });
       if (!result.success) {
         const fe: Record<string, string> = {};
         result.error.errors.forEach((err) => {
@@ -84,41 +75,16 @@ export const Auth: React.FC = () => {
 
       setIsLoading(true);
       try {
-        const response = await api.post("/auth/register", { email, password, name }, { skipAuth: true });
-        setPendingEmail(email);
-        setMode("verify-otp");
-        setServerInfo(response.message || "OTP sent! Check your inbox.");
+        const response = await api.post("/auth/register", { username, password, name: nameVal }, { skipAuth: true });
+        setIsSuccess(true);
+        setTimeout(() => setAuth(response.user, response.accessToken), 800);
       } catch (err: any) {
         setServerError(err?.message || "Registration failed.");
       } finally {
         setIsLoading(false);
       }
     },
-    [email, password, name]
-  );
-
-  // ── Verify OTP ──────────────────────────────────────────────────────────────
-  const handleVerifyOtp = useCallback(
-    async (e: React.FormEvent) => {
-      e.preventDefault();
-      reset();
-
-      if (!otp || otp.trim().length !== 6) {
-        setErrors({ otp: "Please enter the 6-digit code." });
-        return;
-      }
-
-      setIsLoading(true);
-      try {
-        const response = await api.post("/auth/verify-otp", { email: pendingEmail, otp }, { skipAuth: true });
-        setIsSuccess(true);
-        setTimeout(() => setAuth(response.user, response.accessToken), 800);
-      } catch (err: any) {
-        setIsLoading(false);
-        setServerError(err?.message || "Invalid OTP. Please try again.");
-      }
-    },
-    [otp, pendingEmail, setAuth]
+    [username, password, name, setAuth]
   );
 
   const styles = `
@@ -127,10 +93,6 @@ export const Auth: React.FC = () => {
     @keyframes auth-enter {
       from { opacity: 0; transform: translateY(16px); }
       to   { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes otp-enter {
-      from { opacity: 0; transform: scale(0.96); }
-      to   { opacity: 1; transform: scale(1); }
     }
 
     .auth-card { animation: auth-enter 0.5s cubic-bezier(0.16,1,0.3,1) both; font-family: 'Inter', sans-serif; }
@@ -150,17 +112,6 @@ export const Auth: React.FC = () => {
     .auth-input::placeholder { color: #94a3b8; }
     .auth-input-error { border-color: #ef4444 !important; }
     .auth-input-error:focus { border-color: #ef4444 !important; box-shadow: 0 0 0 3px rgba(239,68,68,0.1) !important; }
-
-    .otp-input {
-      width: 100%; box-sizing: border-box; background: #f8fafc;
-      border: 2px solid #e2e8f0; border-radius: 10px; padding: 16px 14px;
-      font-family: 'Courier New', monospace; font-size: 28px; font-weight: 900;
-      color: ${GREEN}; outline: none; text-align: center; letter-spacing: 0.3em;
-      transition: border-color 0.2s, box-shadow 0.2s;
-      animation: otp-enter 0.3s ease both;
-    }
-    .otp-input:focus { border-color: ${GREEN}; box-shadow: 0 0 0 3px rgba(4,120,87,0.15); background: #fff; }
-    .otp-input::placeholder { color: #cbd5e1; letter-spacing: 0.2em; font-size: 22px; }
 
     .auth-btn {
       width: 100%; background: ${GREEN}; color: #fff; border: none; border-radius: 8px;
@@ -202,7 +153,7 @@ export const Auth: React.FC = () => {
               </div>
 
               {/* Tab switcher — only on login/register */}
-              {mode !== "verify-otp" && !isSuccess && (
+              {!isSuccess && (
                 <div style={{ display: "flex", gap: 4, background: "#f8fafc", borderRadius: 8, padding: 4 }}>
                   <button className={`auth-tab ${mode === "login" ? "auth-tab-active" : "auth-tab-inactive"}`} style={{ flex: 1 }} onClick={() => { setMode("login"); reset(); }}>Sign In</button>
                   <button className={`auth-tab ${mode === "register" ? "auth-tab-active" : "auth-tab-inactive"}`} style={{ flex: 1 }} onClick={() => { setMode("register"); reset(); }}>Create Account</button>
@@ -220,62 +171,13 @@ export const Auth: React.FC = () => {
                 <p style={{ margin: 0, fontSize: 12, fontWeight: 500, color: "#64748b" }}>Opening dashboard…</p>
               </div>
 
-            ) : mode === "verify-otp" ? (
-              /* ── OTP STEP ── */
-              <div>
-                <div style={{ background: "rgba(4,120,87,0.06)", border: "1.5px solid rgba(4,120,87,0.15)", borderRadius: 10, padding: "14px 16px", marginBottom: 20 }}>
-                  <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: GREEN }}>📧 Check your inbox</p>
-                  <p style={{ margin: "4px 0 0", fontSize: 12, color: "#475569" }}>We sent a 6-digit code to <strong>{pendingEmail}</strong></p>
-                </div>
-
-                {serverInfo && (
-                  <div style={{ background: "rgba(4,120,87,0.06)", border: "1.5px solid rgba(4,120,87,0.15)", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: GREEN, fontWeight: 500 }}>
-                    {serverInfo}
-                  </div>
-                )}
-
-                <form onSubmit={handleVerifyOtp} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-                  <div>
-                    <label className="auth-field-label">Verification Code</label>
-                    <input
-                      className={`otp-input ${errors.otp ? "auth-input-error" : ""}`}
-                      type="text"
-                      inputMode="numeric"
-                      maxLength={6}
-                      value={otp}
-                      onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                      placeholder="000000"
-                      autoFocus
-                    />
-                    {errors.otp && <p style={{ margin: "6px 0 0", fontSize: 12, fontWeight: 500, color: "#ef4444" }}>{errors.otp}</p>}
-                  </div>
-
-                  {serverError && (
-                    <div style={{ padding: "12px 14px", borderRadius: 8, background: "rgba(239,68,68,0.06)", border: "1.5px solid rgba(239,68,68,0.2)", fontSize: 13, fontWeight: 500, color: "#dc2626" }}>
-                      {serverError}
-                    </div>
-                  )}
-
-                  <button type="submit" disabled={isLoading || otp.length !== 6} className="auth-btn">
-                    {isLoading ? "Verifying…" : "Verify & Continue →"}
-                  </button>
-
-                  <p style={{ margin: 0, textAlign: "center", fontSize: 12, color: "#94a3b8" }}>
-                    Wrong email?{" "}
-                    <button className="auth-link" type="button" onClick={() => { setMode("register"); setOtp(""); reset(); }}>
-                      Go back
-                    </button>
-                  </p>
-                </form>
-              </div>
-
             ) : mode === "login" ? (
               /* ── LOGIN ── */
               <form onSubmit={handleLogin} noValidate style={{ display: "flex", flexDirection: "column", gap: 18 }}>
                 <div>
-                  <label className="auth-field-label">Email address</label>
-                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" className={`auth-input ${errors.email ? "auth-input-error" : ""}`} />
-                  {errors.email && <p style={{ margin: "6px 0 0", fontSize: 12, fontWeight: 500, color: "#ef4444" }}>{errors.email}</p>}
+                  <label className="auth-field-label">Username</label>
+                  <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Enter username" autoComplete="username" className={`auth-input ${errors.username ? "auth-input-error" : ""}`} />
+                  {errors.username && <p style={{ margin: "6px 0 0", fontSize: 12, fontWeight: 500, color: "#ef4444" }}>{errors.username}</p>}
                 </div>
                 <div>
                   <label className="auth-field-label">Password</label>
@@ -296,18 +198,18 @@ export const Auth: React.FC = () => {
               /* ── REGISTER ── */
               <form onSubmit={handleRegister} noValidate style={{ display: "flex", flexDirection: "column", gap: 18 }}>
                 <div>
+                  <label className="auth-field-label">Username</label>
+                  <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Enter username" autoComplete="username" className={`auth-input ${errors.username ? "auth-input-error" : ""}`} />
+                  {errors.username && <p style={{ margin: "6px 0 0", fontSize: 12, fontWeight: 500, color: "#ef4444" }}>{errors.username}</p>}
+                </div>
+                <div>
                   <label className="auth-field-label">Full Name</label>
-                  <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="John Doe" autoComplete="name" className={`auth-input ${errors.name ? "auth-input-error" : ""}`} />
+                  <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="John Doe (Optional)" autoComplete="name" className={`auth-input ${errors.name ? "auth-input-error" : ""}`} />
                   {errors.name && <p style={{ margin: "6px 0 0", fontSize: 12, fontWeight: 500, color: "#ef4444" }}>{errors.name}</p>}
                 </div>
                 <div>
-                  <label className="auth-field-label">Email address</label>
-                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" className={`auth-input ${errors.email ? "auth-input-error" : ""}`} />
-                  {errors.email && <p style={{ margin: "6px 0 0", fontSize: 12, fontWeight: 500, color: "#ef4444" }}>{errors.email}</p>}
-                </div>
-                <div>
                   <label className="auth-field-label">Password</label>
-                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min. 8 characters" autoComplete="new-password" className={`auth-input ${errors.password ? "auth-input-error" : ""}`} />
+                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min. 6 characters" autoComplete="new-password" className={`auth-input ${errors.password ? "auth-input-error" : ""}`} />
                   {errors.password && <p style={{ margin: "6px 0 0", fontSize: 12, fontWeight: 500, color: "#ef4444" }}>{errors.password}</p>}
                 </div>
                 {serverError && (
@@ -316,7 +218,7 @@ export const Auth: React.FC = () => {
                   </div>
                 )}
                 <button type="submit" disabled={isLoading} className="auth-btn">
-                  {isLoading ? "Creating account…" : "Create Account & Send OTP"}
+                  {isLoading ? "Creating account…" : "Create Account"}
                 </button>
               </form>
             )}

@@ -39,27 +39,69 @@ exports.io = io;
 // Security & utility middlewares
 app.use((0, helmet_1.default)());
 app.use((0, cors_1.default)({
-    origin: "*", // In production this will match the client URL
+    origin: "*",
     credentials: true,
 }));
 app.use(express_1.default.json());
+// Global Rate Limiter
+const globalLimiter = (0, express_rate_limit_1.default)({
+    windowMs: 15 * 60 * 1000,
+    max: 200,
+    message: { error: "Too many requests, please try again later." },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+app.use("/api/", globalLimiter);
+// Module 1 Config Endpoint
+app.get("/module1/config", (_req, res) => {
+    res.json({
+        symbols: ["NIFTY-FUT", "NIFTY-SPOT"],
+        timeframes: ["1m", "3m", "5m"],
+        pivotMethods: ["classic", "camarilla", "fibonacci"],
+        defaultSymbol: "NIFTY-FUT",
+        defaultTimeframe: "5m",
+        defaultMethod: "classic",
+    });
+});
+app.get("/api/module1/config", (_req, res) => {
+    res.json({
+        symbols: ["NIFTY-FUT", "NIFTY-SPOT"],
+        timeframes: ["1m", "3m", "5m"],
+        pivotMethods: ["classic", "camarilla", "fibonacci"],
+        defaultSymbol: "NIFTY-FUT",
+        defaultTimeframe: "5m",
+        defaultMethod: "classic",
+    });
+});
+// Module 2 Tracker Endpoint
+app.get("/module2/tracker", (_req, res) => {
+    res.json({
+        sessionType: "mixed",
+        indexSymbol: "NIFTY50",
+        expiryDate: "2026-06-04",
+        selectedStrikes: [],
+        strikes: {},
+        mode: "mock",
+    });
+});
+app.get("/api/module2/tracker", (_req, res) => {
+    res.json({
+        sessionType: "mixed",
+        indexSymbol: "NIFTY50",
+        expiryDate: "2026-06-04",
+        selectedStrikes: [],
+        strikes: {},
+        mode: "mock",
+    });
+});
 // Mount authentication router
 app.use("/auth", auth_1.default);
 app.use("/api/auth", auth_1.default);
 // Mount market and tracker routers
 app.use("/api", market_1.default);
 app.use("/api/module2", tracker_1.default);
-// Global Rate Limiter (Applied to general REST routes)
-const globalLimiter = (0, express_rate_limit_1.default)({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 200, // Limit each IP to 200 requests per window
-    message: { error: "Too many requests, please try again later." },
-    standardHeaders: true,
-    legacyHeaders: false,
-});
-app.use("/api/", globalLimiter);
 // Health Check Endpoint
-app.get("/health", async (req, res) => {
+app.get("/health", async (_req, res) => {
     const mongoStatus = mongooseConnectionStatus();
     let redisStatus = "disconnected";
     try {
@@ -90,14 +132,14 @@ function mongooseConnectionStatus() {
     return states[mongoose.connection.readyState] || "unknown";
 }
 // Global Error Handler
-app.use((err, req, res, next) => {
+app.use((err, _req, res, _next) => {
     console.error("Unhandled Application Error:", err);
     res.status(500).json({
         error: "Internal Server Error",
         message: process.env.NODE_ENV === "development" ? err.message : undefined,
     });
 });
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 const startServer = async () => {
     // Establish MongoDB Atlas Connection
     await (0, db_1.connectDB)();

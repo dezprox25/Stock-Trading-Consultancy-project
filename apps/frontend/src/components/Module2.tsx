@@ -886,7 +886,6 @@ function StrikeTrackerTable({ strikesList, session, sortedTimestamps, highlightT
                 const isTop3 = highlightTop3 && topStrikes.includes(strike);
                 const isCE = parsed.optionType === "CE";
 
-                const rowBg = s.isDeepLoss ? "rgba(107,114,128,0.08)" : s.isDowntrendActive ? "rgba(37, 99, 235, 0.08)" : "transparent";
                 // sticky cell needs a solid background
                 const stickyBg = s.isDeepLoss
                   ? "rgba(255,242,242,0.98)"

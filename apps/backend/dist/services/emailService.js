@@ -1,32 +1,33 @@
-import { Resend } from "resend";
-import nodemailer from "nodemailer";
-
-const resend = new Resend(process.env.RESEND_API_KEY);
-
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.sendOtpEmail = void 0;
+const resend_1 = require("resend");
+const nodemailer_1 = __importDefault(require("nodemailer"));
+const resend = new resend_1.Resend(process.env.RESEND_API_KEY);
 const smtpHost = process.env.SMTP_HOST;
 const smtpPort = process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : 587;
 const smtpUser = process.env.SMTP_USER;
 const smtpPass = process.env.SMTP_PASS;
 const smtpFrom = process.env.SMTP_FROM || "TradePro <onboarding@resend.dev>";
-
-let transporter: nodemailer.Transporter | null = null;
+let transporter = null;
 if (smtpHost && smtpUser && smtpPass) {
-  transporter = nodemailer.createTransport({
-    host: smtpHost,
-    port: smtpPort,
-    secure: smtpPort === 465,
-    auth: {
-      user: smtpUser,
-      pass: smtpPass,
-    },
-  });
-  console.log(`[Email] SMTP transporter initialized with host: ${smtpHost}`);
+    transporter = nodemailer_1.default.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpPort === 465,
+        auth: {
+            user: smtpUser,
+            pass: smtpPass,
+        },
+    });
+    console.log(`[Email] SMTP transporter initialized with host: ${smtpHost}`);
 }
-
-export const sendOtpEmail = async (to: string, otp: string): Promise<void> => {
-  console.log(`[OTP] Generated Code for ${to}: ${otp}`);
-
-  const emailHtml = `
+const sendOtpEmail = async (to, otp) => {
+    console.log(`[OTP] Generated Code for ${to}: ${otp}`);
+    const emailHtml = `
       <div style="font-family: 'Inter', Arial, sans-serif; max-width: 480px; margin: 0 auto; background: #fff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0;">
         <div style="height: 4px; background: linear-gradient(90deg, #047857, #10b981);"></div>
         <div style="padding: 32px;">
@@ -51,31 +52,32 @@ export const sendOtpEmail = async (to: string, otp: string): Promise<void> => {
         </div>
       </div>
     `;
-
-  if (transporter) {
-    try {
-      await transporter.sendMail({
-        from: smtpFrom,
-        to,
-        subject: "Your TradePro Verification Code",
-        html: emailHtml,
-      });
-      console.log(`[Email] OTP sent successfully to ${to} via SMTP`);
-    } catch (smtpErr) {
-      console.error(`[Email] Failed sending via SMTP:`, smtpErr);
-      throw smtpErr;
+    if (transporter) {
+        try {
+            await transporter.sendMail({
+                from: smtpFrom,
+                to,
+                subject: "Your TradePro Verification Code",
+                html: emailHtml,
+            });
+            console.log(`[Email] OTP sent successfully to ${to} via SMTP`);
+        }
+        catch (smtpErr) {
+            console.error(`[Email] Failed sending via SMTP:`, smtpErr);
+            throw smtpErr;
+        }
     }
-  } else {
-    const { error } = await resend.emails.send({
-      from: smtpFrom,
-      to,
-      subject: "Your TradePro Verification Code",
-      html: emailHtml,
-    });
-
-    if (error) {
-      throw new Error(`Resend error: ${error.message}`);
+    else {
+        const { error } = await resend.emails.send({
+            from: smtpFrom,
+            to,
+            subject: "Your TradePro Verification Code",
+            html: emailHtml,
+        });
+        if (error) {
+            throw new Error(`Resend error: ${error.message}`);
+        }
+        console.log(`[Email] OTP sent successfully to ${to} via Resend`);
     }
-    console.log(`[Email] OTP sent successfully to ${to} via Resend`);
-  }
 };
+exports.sendOtpEmail = sendOtpEmail;
