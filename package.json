@@ -15,5 +15,8 @@
   },
   "devDependencies": {
     "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "resend": "^6.12.4"
   }
 }
