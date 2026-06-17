@@ -1,11 +1,13 @@
 import { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import { User } from "../models/User";
 import { Watchlist } from "../models/Watchlist";
 import { RegisterSchema, LoginSchema } from "@stock/shared";
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from "../utils/token";
 import redis from "../config/redis";
+import { sendOtpEmail } from "../services/emailService";
 
 // Helper to parse cookies manually from raw header
 const getCookie = (req: Request, name: string): string | null => {
@@ -21,7 +23,11 @@ const getCookie = (req: Request, name: string): string | null => {
   return cookies[name] || null;
 };
 
-// User Registration
+// Generate a 6-digit OTP
+const generateOtp = (): string =>
+  crypto.randomInt(100000, 999999).toString();
+
+// User Registration — saves user unverified, sends OTP
 export const register = async (req: Request, res: Response) => {
   try {
     const parseResult = RegisterSchema.safeParse(req.body);
@@ -31,45 +37,62 @@ export const register = async (req: Request, res: Response) => {
 
     const { email, password, name } = parseResult.data;
 
-    let existingUser = null;
-    try {
-      existingUser = await User.findOne({ email });
-    } catch (err) {
-      console.warn("[Auth] DB offline during registration. Continuing in-memory.");
-    }
-
+    const existingUser = await User.findOne({ email });
     if (existingUser) {
+      if (!existingUser.isVerified) {
+        // Resend OTP for unverified users
+        const otp = generateOtp();
+        existingUser.otpCode = otp;
+        existingUser.otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+        await existingUser.save();
+        await sendOtpEmail(email, otp);
+        return res.status(200).json({
+          message: "Account pending verification. A new OTP has been sent to your email.",
+          requiresVerification: true,
+          email,
+        });
+      }
       return res.status(409).json({ error: "Email is already registered" });
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
-    let userId = "60c72b2f9b1d8a0015f8e567";
+    const otp = generateOtp();
+    const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 min
 
+    const newUser = await User.create({
+      email,
+      password: hashedPassword,
+      name,
+      status: "active",
+      isVerified: false,
+      otpCode: otp,
+      otpExpires,
+    });
+
+    await Watchlist.create({
+      user_id: newUser._id,
+      symbols_json: [],
+      column_prefs_json: {},
+    });
+
+    // Send OTP email
     try {
-      const newUser = await User.create({
+      await sendOtpEmail(email, otp);
+    } catch (mailErr) {
+      console.error("[Auth] Failed to send OTP email:", mailErr);
+      // Still return success but warn about email
+      return res.status(201).json({
+        message: "Account created but OTP email failed to send. Check SMTP config.",
+        requiresVerification: true,
         email,
-        password: hashedPassword,
-        name,
-        status: "active",
+        _devOtp: process.env.NODE_ENV === "development" ? otp : undefined,
       });
-      userId = newUser._id.toString();
-
-      await Watchlist.create({
-        user_id: newUser._id,
-        symbols_json: [],
-        column_prefs_json: {},
-      });
-    } catch (err) {
-      console.warn("[Auth] MongoDB offline. Simulating user entry in memory.");
     }
 
     return res.status(201).json({
-      message: "User registered successfully",
-      user: {
-        id: userId,
-        email,
-        name,
-      },
+      message: "Account created! Check your email for the verification code.",
+      requiresVerification: true,
+      email,
     });
   } catch (error) {
     console.error("Registration Error:", error);
@@ -77,7 +100,69 @@ export const register = async (req: Request, res: Response) => {
   }
 };
 
-// User Login
+// Verify OTP — confirms email and activates account
+export const verifyOtp = async (req: Request, res: Response) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({ error: "Email and OTP are required" });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({ error: "Account is already verified" });
+    }
+
+    if (!user.otpCode || !user.otpExpires) {
+      return res.status(400).json({ error: "No OTP found. Please register again." });
+    }
+
+    if (new Date() > user.otpExpires) {
+      return res.status(400).json({ error: "OTP has expired. Please register again to get a new one." });
+    }
+
+    if (user.otpCode !== otp.trim()) {
+      return res.status(400).json({ error: "Incorrect OTP. Please try again." });
+    }
+
+    // Mark verified and clear OTP
+    user.isVerified = true;
+    user.otpCode = null as any;
+    user.otpExpires = null as any;
+    await user.save();
+
+    // Auto-login after verification
+    const accessToken = generateAccessToken(user._id.toString());
+    const refreshToken = generateRefreshToken(user._id.toString());
+
+    res.cookie("refresh", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    return res.status(200).json({
+      message: "Email verified successfully!",
+      accessToken,
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+      },
+    });
+  } catch (error) {
+    console.error("OTP Verification Error:", error);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+// User Login — blocks unverified accounts
 export const login = async (req: Request, res: Response) => {
   try {
     const parseResult = LoginSchema.safeParse(req.body);
@@ -86,27 +171,29 @@ export const login = async (req: Request, res: Response) => {
     }
 
     const { email, password } = parseResult.data;
-    let user = null;
-    let match = false;
 
-    try {
-      user = await User.findOne({ email });
-      if (user) {
-        match = await bcrypt.compare(password, user.password);
-      }
-    } catch (err) {
-      console.warn("[Auth] MongoDB offline. Logging in with mock guest profile.");
-      // Fallback: allow sign-in with default values if DB is down
-      user = {
-        _id: "60c72b2f9b1d8a0015f8e567",
-        email,
-        name: "Intraday Guest Trader",
-        status: "active",
-      };
-      match = true;
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    if (!user || user.status === "inactive" || !match) {
+    if (!user.isVerified) {
+      // Resend OTP so they can verify
+      const otp = generateOtp();
+      user.otpCode = otp;
+      user.otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+      await user.save();
+      try { await sendOtpEmail(email, otp); } catch (_) {}
+      return res.status(403).json({
+        error: "Email not verified. A new OTP has been sent to your email.",
+        requiresVerification: true,
+        email,
+      });
+    }
+
+    const match = await bcrypt.compare(password, user.password);
+    if (!match || user.status === "inactive") {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
@@ -143,18 +230,7 @@ export const refresh = async (req: Request, res: Response) => {
     }
 
     const decoded = verifyRefreshToken(refreshToken);
-    let user = null;
-
-    try {
-      user = await User.findById(decoded.userId);
-    } catch (err) {
-      // Fallback if DB is down
-      user = {
-        _id: decoded.userId,
-        name: "Intraday Guest Trader",
-        status: "active",
-      };
-    }
+    const user = await User.findById(decoded.userId);
 
     if (!user || user.status === "inactive") {
       return res.status(401).json({ error: "User is no longer active" });
@@ -174,7 +250,6 @@ export const refresh = async (req: Request, res: Response) => {
 // User Logout
 export const logout = async (req: Request, res: Response) => {
   try {
-    // Extract access token from authorization header to blacklist it
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith("Bearer ")) {
       const token = authHeader.split(" ")[1];
@@ -183,16 +258,12 @@ export const logout = async (req: Request, res: Response) => {
         if (decoded && decoded.exp) {
           const ttl = Math.max(0, decoded.exp - Math.floor(Date.now() / 1000));
           if (ttl > 0) {
-            // Blacklist the token in Redis for its remaining life
             await redis.setex(`blacklist:${token}`, ttl, "1");
           }
         }
-      } catch (err) {
-        // Ignore parsing errors for invalid token formats on logout
-      }
+      } catch (_) {}
     }
 
-    // Clear the refresh token cookie
     res.clearCookie("refresh", {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",

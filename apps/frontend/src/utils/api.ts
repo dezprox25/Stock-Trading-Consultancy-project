@@ -7,7 +7,10 @@ interface RequestOptions extends RequestInit {
 const handleResponse = async (response: Response) => {
   const data = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(data?.error || `Request failed with status ${response.status}`);
+    // Create an enriched error that carries all fields from the response body
+    const err: any = new Error(data?.error || `Request failed with status ${response.status}`);
+    if (data) Object.assign(err, data);
+    throw err;
   }
   return data;
 };

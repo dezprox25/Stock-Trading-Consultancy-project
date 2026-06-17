@@ -19,14 +19,33 @@ const UserSchema = new Schema(
       required: true,
       trim: true,
     },
+
     status: {
       type: String,
       enum: ["active", "inactive"],
       default: "active",
     },
+
+    isVerified: {
+      type: Boolean,
+      default: false,
+    },
+
+    otpCode: {
+      type: String,
+      default: null,
+    },
+
+    otpExpires: {
+      type: Date,
+      default: null,
+    },
   },
   {
-    timestamps: { createdAt: "created_at", updatedAt: "updated_at" },
+    timestamps: {
+      createdAt: "created_at",
+      updatedAt: "updated_at",
+    },
   }
 );
 
