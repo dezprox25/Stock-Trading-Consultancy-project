@@ -6,6 +6,7 @@ export interface Tick {
   ltp: number;
   timestamp: Date;
   volume?: number;
+  oi?: number;
 }
 
 export interface Candle {
@@ -70,6 +71,10 @@ export interface Module2Cell {
   timestamp: string; // "HH:MM" timestamp representation
   isHigh: boolean;
   isLow: boolean;
+  oi?: number;
+  oiDelta?: number;
+  oiBuy?: number;
+  oiSell?: number;
 }
 
 export type TrendBadgeState = "H_TO_L" | "L_TO_H" | "FLAT" | "REVERSAL";
@@ -84,6 +89,12 @@ export interface Module2StrikeState {
   isDowntrendActive: boolean; // Call-Down filter trigger (3 consecutive down minutes)
   isDeepLoss: boolean; // Drop of >15% from open
   pctChange: number; // Percent change from Day Open
+  oiLatest?: number;
+  oiBuyLatest?: number;
+  oiSellLatest?: number;
+  oiHigh?: number;
+  oiLow?: number;
+  oiMean?: number;
 }
 
 export interface Module2SessionData {
@@ -96,6 +107,15 @@ export interface Module2SessionData {
   dayOpenPrices: Record<string, number>;
   strikes: Record<string, Module2StrikeState>;
   createdAt: Date;
+  futuresOI?: {
+    symbol: string;
+    oiLatest?: number;
+    oiDelta?: number;
+    oiBuy?: number;
+    oiSell?: number;
+    oiHigh?: number;
+    oiLow?: number;
+  };
 }
 
 // User Profile interface

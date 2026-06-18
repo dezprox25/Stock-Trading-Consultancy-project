@@ -37,6 +37,22 @@ export const Module2StrikeTickSchema = new Schema({
     type: Boolean,
     default: false,
   },
+  oi: {
+    type: Number,
+    default: 0,
+  },
+  oi_delta: {
+    type: Number,
+    default: 0,
+  },
+  oi_buy: {
+    type: Number,
+    default: 0,
+  },
+  oi_sell: {
+    type: Number,
+    default: 0,
+  },
 });
 
 // Compound Index to retrieve session ticks quickly ordered by time

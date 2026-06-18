@@ -11,129 +11,6 @@ const parseStrikeSymbol = (symbol: string) => {
   return { strikePrice: symbol, optionType: "" };
 };
 
-const calculateMockTrendAndWarnings = (s: any) => {
-  const grid = s.grid;
-  if (!grid || grid.length === 0) return;
-  const lastCell = grid[grid.length - 1];
-  const ltp = lastCell.ltp;
-  const previousBadge = s.trendBadge || "FLAT";
-  const recentLtpList = grid.slice(-5).map((c: any) => c.ltp);
-  let newBadge: "H_TO_L" | "L_TO_H" | "FLAT" | "REVERSAL" = "FLAT";
-  if (recentLtpList.length >= 5) {
-    let higherHighs = 0; let lowerLows = 0;
-    for (let i = 1; i < recentLtpList.length; i++) {
-      if (recentLtpList[i] > recentLtpList[i - 1]) higherHighs++;
-      if (recentLtpList[i] < recentLtpList[i - 1]) lowerLows++;
-    }
-    if (lowerLows >= 4) newBadge = "H_TO_L";
-    else if (higherHighs >= 4) newBadge = "L_TO_H";
-  }
-  if (previousBadge === "H_TO_L" && newBadge === "FLAT" && recentLtpList.length >= 2 && recentLtpList[recentLtpList.length - 1] > recentLtpList[recentLtpList.length - 2]) {
-    newBadge = "REVERSAL";
-  } else if (previousBadge === "L_TO_H" && newBadge === "FLAT" && recentLtpList.length >= 2 && recentLtpList[recentLtpList.length - 1] < recentLtpList[recentLtpList.length - 2]) {
-    newBadge = "REVERSAL";
-  }
-  s.trendBadge = newBadge;
-  const isCE = s.strike.endsWith("CE");
-  if (isCE) {
-    if (ltp < s.dayOpen * 0.85) s.isDeepLoss = true;
-    const recent3 = grid.slice(-3).map((c: any) => c.ltp);
-    if (recent3.length >= 3 && recent3[0] > recent3[1] && recent3[1] > recent3[2]) s.isDowntrendActive = true;
-    if (recent3.length >= 3 && recent3[recent3.length - 1] > recent3[recent3.length - 2] && recent3[recent3.length - 2] > recent3[recent3.length - 3]) {
-      s.isDowntrendActive = false; s.isDeepLoss = false;
-    }
-  } else {
-    s.isDowntrendActive = false; s.isDeepLoss = false;
-  }
-};
-
-const ensureFullStrikesData = (session: any) => {
-  if (!session) return session;
-  const nextSession = JSON.parse(JSON.stringify(session));
-  if (!nextSession.strikes) nextSession.strikes = {};
-  const defaultCeStrikes = ["NIFTY21850CE","NIFTY21900CE","NIFTY21950CE","NIFTY22000CE","NIFTY22050CE","NIFTY22100CE","NIFTY22150CE","NIFTY22200CE","NIFTY22250CE","NIFTY22300CE"];
-  const defaultPeStrikes = ["NIFTY21850PE","NIFTY21900PE","NIFTY21950PE","NIFTY22000PE","NIFTY22050PE","NIFTY22100PE","NIFTY22150PE","NIFTY22200PE","NIFTY22250PE","NIFTY22300PE"];
-  let currentSelected = [...nextSession.selectedStrikes];
-  const ceSelected = currentSelected.filter((s: string) => s.endsWith("CE"));
-  const peSelected = currentSelected.filter((s: string) => s.endsWith("PE"));
-  const isTinyCustom = currentSelected.length === 1 || currentSelected.length === 2;
-  if (!isTinyCustom) {
-    const maxCeCount = nextSession.sessionType === "mixed" ? 5 : 10;
-    if (nextSession.sessionType === "CE" || nextSession.sessionType === "mixed") {
-      let ceCount = ceSelected.length;
-      for (let i = 0; i < defaultCeStrikes.length && ceCount < maxCeCount; i++) {
-        const d = defaultCeStrikes[i];
-        if (!currentSelected.includes(d)) { currentSelected.push(d); ceCount++; }
-      }
-    }
-    const maxPeCount = nextSession.sessionType === "mixed" ? 5 : 10;
-    if (nextSession.sessionType === "PE" || nextSession.sessionType === "mixed") {
-      let peCount = peSelected.length;
-      for (let i = 0; i < defaultPeStrikes.length && peCount < maxPeCount; i++) {
-        const d = defaultPeStrikes[i];
-        if (!currentSelected.includes(d)) { currentSelected.push(d); peCount++; }
-      }
-    }
-  }
-  if (currentSelected.length > 10) currentSelected = currentSelected.slice(0, 10);
-  nextSession.selectedStrikes = currentSelected;
-  const baselines: Record<string, number> = {
-    "NIFTY21850CE": 180,"NIFTY21900CE": 150,"NIFTY21950CE": 120,"NIFTY22000CE": 95,"NIFTY22050CE": 75,
-    "NIFTY22100CE": 55,"NIFTY22150CE": 40,"NIFTY22200CE": 30,"NIFTY22250CE": 20,"NIFTY22300CE": 12,
-    "NIFTY21850PE": 15,"NIFTY21900PE": 22,"NIFTY21950PE": 32,"NIFTY22000PE": 45,"NIFTY22050PE": 65,
-    "NIFTY22100PE": 88,"NIFTY22150PE": 115,"NIFTY22200PE": 145,"NIFTY22250PE": 180,"NIFTY22300PE": 220,
-  };
-  currentSelected.forEach((strike: string) => {
-    if (!nextSession.strikes[strike]) {
-      const base = baselines[strike] || 100;
-      let maxMinutes = 0; let existingGrid: any[] = [];
-      Object.values(nextSession.strikes).forEach((s: any) => {
-        if (s.grid && s.grid.length > maxMinutes) { maxMinutes = s.grid.length; existingGrid = s.grid; }
-      });
-      let grid: any[] = [];
-      if (maxMinutes > 0) {
-        grid = existingGrid.map((cell: any) => ({ ltp: base, minute: cell.minute, timestamp: cell.timestamp, isHigh: false, isLow: false }));
-      } else {
-        let currentLtp = base;
-        for (let m = 0; m < 16; m++) {
-          let minVal = 15 + m; let hrVal = 9 + Math.floor(minVal / 60);
-          const timestamp = `${hrVal.toString().padStart(2, "0")}:${(minVal % 60).toString().padStart(2, "0")}`;
-          currentLtp = Math.max(1, Number((currentLtp + (Math.random() - 0.5) * 4).toFixed(2)));
-          grid.push({ ltp: currentLtp, minute: m, timestamp, isHigh: false, isLow: false });
-        }
-      }
-      nextSession.strikes[strike] = { strike, dayOpen: base, dayHigh: base, dayLow: base, grid, trendBadge: "FLAT", isDowntrendActive: false, isDeepLoss: false, pctChange: 0 };
-      calculateMockTrendAndWarnings(nextSession.strikes[strike]);
-    }
-  });
-  return nextSession;
-};
-
-const generateFallbackSession = () => {
-  const selectedStrikes = ["NIFTY22000CE","NIFTY22050CE","NIFTY22100CE","NIFTY22150CE","NIFTY22200CE","NIFTY22000PE","NIFTY22050PE","NIFTY22100PE","NIFTY22150PE","NIFTY22200PE"];
-  const strikes: Record<string, any> = {};
-  const baselines: Record<string, number> = {
-    "NIFTY21850CE": 180,"NIFTY21900CE": 150,"NIFTY21950CE": 120,"NIFTY22000CE": 95,"NIFTY22050CE": 75,
-    "NIFTY22100CE": 55,"NIFTY22150CE": 40,"NIFTY22200CE": 30,"NIFTY22250CE": 20,"NIFTY22300CE": 12,
-    "NIFTY21850PE": 15,"NIFTY21900PE": 22,"NIFTY21950PE": 32,"NIFTY22000PE": 45,"NIFTY22050PE": 65,
-    "NIFTY22100PE": 88,"NIFTY22150PE": 115,"NIFTY22200PE": 145,"NIFTY22250PE": 180,"NIFTY22300PE": 220,
-  };
-  selectedStrikes.forEach((strike) => {
-    const base = baselines[strike] || 100;
-    const grid: any[] = []; let currentLtp = base; let dayHigh = base; let dayLow = base;
-    for (let m = 0; m < 16; m++) {
-      let minVal = 15 + m; let hrVal = 9 + Math.floor(minVal / 60);
-      const timestamp = `${hrVal.toString().padStart(2, "0")}:${(minVal % 60).toString().padStart(2, "0")}`;
-      currentLtp = Math.max(1, Number((currentLtp + (Math.random() - 0.5) * 4).toFixed(2)));
-      dayHigh = Math.max(dayHigh, currentLtp); dayLow = Math.min(dayLow, currentLtp);
-      grid.push({ ltp: currentLtp, minute: m, timestamp, isHigh: false, isLow: false });
-    }
-    strikes[strike] = { strike, dayOpen: base, dayHigh, dayLow, grid, trendBadge: "FLAT", isDowntrendActive: false, isDeepLoss: false, pctChange: Number((((currentLtp - base) / base) * 100).toFixed(2)) };
-    calculateMockTrendAndWarnings(strikes[strike]);
-  });
-  return { sessionId: "fallback-session", userId: "guest", sessionType: "mixed", indexSymbol: "NIFTY50", expiryDate: "2026-06-04", selectedStrikes, dayOpenPrices: baselines, strikes, createdAt: new Date() };
-};
-
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const GREEN = "#047857";
 const RED = "#E53935";
@@ -249,9 +126,7 @@ function FilterChip({ label, active, onClick, color = GREEN }: { label: string; 
 export const Module2 = ({ isSplit = false }: { isSplit?: boolean }) => {
   const activeSession = useStore((s) => s.activeSession);
   const setActiveSession = useStore((s) => s.setActiveSession);
-  const [localFallbackSession, setLocalFallbackSession] = useState<any>(() => generateFallbackSession());
   const [isConfigExpanded, setIsConfigExpanded] = useState(!isSplit);
-
 
   const [indexSymbol, setIndexSymbol] = useState("NIFTY50");
   const [expiryDate, setExpiryDate] = useState("2026-06-04");
@@ -281,101 +156,13 @@ export const Module2 = ({ isSplit = false }: { isSplit?: boolean }) => {
     if (initialSession) setActiveSession(initialSession);
   }, [initialSession, setActiveSession]);
 
-  const prices = useStore((s) => s.prices);
-
-  useEffect(() => {
-    if (activeSession) return;
-    const interval = setInterval(() => {
-      setLocalFallbackSession((prev: any) => {
-        const next = JSON.parse(JSON.stringify(prev));
-        let updated = false;
-        Object.keys(next.strikes).forEach((strike) => {
-          const s = next.strikes[strike];
-          const grid = s.grid;
-          if (grid.length > 0) {
-            const lastCell = grid[grid.length - 1];
-            const livePriceObj = prices[strike];
-            let newLtp = lastCell.ltp;
-            if (livePriceObj && livePriceObj.ltp > 0) {
-              if (lastCell.ltp !== livePriceObj.ltp) { newLtp = livePriceObj.ltp; updated = true; }
-            } else {
-              newLtp = Math.max(1, Number((lastCell.ltp + (Math.random() - 0.5) * 1.5).toFixed(2))); updated = true;
-            }
-            if (newLtp !== lastCell.ltp) {
-              lastCell.ltp = newLtp; s.dayHigh = Math.max(s.dayHigh, newLtp); s.dayLow = Math.min(s.dayLow, newLtp);
-              s.pctChange = Number((((newLtp - s.dayOpen) / s.dayOpen) * 100).toFixed(2));
-              calculateMockTrendAndWarnings(s);
-            }
-          }
-        });
-        return updated ? next : prev;
-      });
-    }, 1500);
-    return () => clearInterval(interval);
-  }, [prices, activeSession]);
-
-  useEffect(() => {
-    if (activeSession) return;
-    const interval = setInterval(() => {
-      setLocalFallbackSession((prev: any) => {
-        const next = JSON.parse(JSON.stringify(prev));
-        const firstKey = Object.keys(next.strikes)[0];
-        const lastCell = next.strikes[firstKey]?.grid[next.strikes[firstKey].grid.length - 1];
-        let nextMinute = 0; let nextTimestamp = "09:31";
-        if (lastCell) {
-          const [h, m] = lastCell.timestamp.split(":").map(Number);
-          let newM = m + 1; let newH = h;
-          if (newM >= 60) { newM = 0; newH = (h + 1) % 24; }
-          nextTimestamp = `${newH.toString().padStart(2, "0")}:${newM.toString().padStart(2, "0")}`;
-          nextMinute = lastCell.minute + 1;
-        }
-        Object.keys(next.strikes).forEach((strike) => {
-          const s = next.strikes[strike];
-          const currentLtp = s.grid.length > 0 ? s.grid[s.grid.length - 1].ltp : s.dayOpen;
-          s.grid.push({ ltp: currentLtp, minute: nextMinute, timestamp: nextTimestamp, isHigh: false, isLow: false });
-          calculateMockTrendAndWarnings(s);
-        });
-        return next;
-      });
-    }, 60000);
-    return () => clearInterval(interval);
-  }, [activeSession]);
-
   const startSessionMutation = useMutation({
     mutationFn: () => api.post("/api/module2/session/start", { sessionType, indexSymbol, expiryDate, selectedStrikes }),
     onSuccess: (data) => setActiveSession(data),
   });
 
   const handleExportCSV = async () => {
-    const sessionToExport = activeSession || localFallbackSession;
-    if (!sessionToExport) return;
-    if (!activeSession) {
-      try {
-        let maxMinutes = 0;
-        Object.values(sessionToExport.strikes).forEach((s: any) => { maxMinutes = Math.max(maxMinutes, s.grid.length); });
-        const firstStrikeKey = Object.keys(sessionToExport.strikes)[0];
-        const firstStrike = firstStrikeKey ? sessionToExport.strikes[firstStrikeKey] : null;
-        const headers = ["Strike", "Day Open", "Day High", "Day Low", "Trend Badge", "Pct Change"];
-        for (let m = 0; m < maxMinutes; m++) { headers.push(firstStrike?.grid[m]?.timestamp || `Min ${m}`); }
-        let csv = headers.join(",") + "\n";
-        sessionToExport.selectedStrikes.forEach((strike: string) => {
-          const s = sessionToExport.strikes[strike];
-          if (!s) return;
-          const row = [strike, Math.round(s.dayOpen), Math.round(s.dayHigh), Math.round(s.dayLow), s.trendBadge, `${s.pctChange}%`];
-          for (let m = 0; m < maxMinutes; m++) {
-            const cell = s.grid[m];
-            if (cell) { let v = Math.round(cell.ltp).toString(); if (cell.isHigh) v += " (H)"; if (cell.isLow) v += " (L)"; row.push(v); }
-            else row.push("");
-          }
-          csv += row.join(",") + "\n";
-        });
-        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-        const url = URL.createObjectURL(blob); const a = document.createElement("a");
-        a.href = url; a.download = "session_mock_export.csv"; document.body.appendChild(a); a.click();
-        document.body.removeChild(a); URL.revokeObjectURL(url);
-      } catch (err) { console.error("CSV export failed:", err); }
-      return;
-    }
+    if (!activeSession) return;
     try {
       const blob = await fetch("/api/module2/export", { headers: { Authorization: `Bearer ${useStore.getState().accessToken}` } }).then(r => r.blob());
       const url = window.URL.createObjectURL(blob); const a = document.createElement("a");
@@ -394,45 +181,44 @@ export const Module2 = ({ isSplit = false }: { isSplit?: boolean }) => {
   };
 
   const hasStrikes = activeSession && Object.keys(activeSession.strikes || {}).length > 0;
-  const rawSession = hasStrikes ? activeSession : localFallbackSession;
-  const currentSession = ensureFullStrikesData(rawSession);
+  const currentSession = activeSession || { sessionId: "", userId: "", sessionType: "mixed", indexSymbol: "NIFTY50", expiryDate: "2026-06-04", selectedStrikes: [], dayOpenPrices: {}, strikes: {}, createdAt: new Date() };
 
   const sortedTimestamps = (() => {
     const tsSet = new Set<string>();
-    Object.values(currentSession.strikes).forEach((s: any) => { s.grid.forEach((c: any) => { if (c.timestamp) tsSet.add(c.timestamp); }); });
-    if (tsSet.size === 0) {
-      const fb: string[] = [];
-      for (let m = 0; m < 16; m++) {
-        let minVal = 15 + m; let hrVal = 9 + Math.floor(minVal / 60);
-        fb.push(`${hrVal.toString().padStart(2, "0")}:${(minVal % 60).toString().padStart(2, "0")}`);
-      }
-      return fb;
+    if (activeSession && activeSession.strikes) {
+      Object.values(activeSession.strikes).forEach((s: any) => {
+        s.grid.forEach((c: any) => { if (c.timestamp) tsSet.add(c.timestamp); });
+      });
     }
     return Array.from(tsSet).sort();
   })();
 
-  const topStrikes = Object.values(currentSession.strikes)
-    .sort((a: any, b: any) => b.pctChange - a.pctChange)
-    .slice(0, 3).map((s: any) => s.strike);
+  const topStrikes = activeSession && activeSession.strikes
+    ? Object.values(activeSession.strikes)
+        .sort((a: any, b: any) => b.pctChange - a.pctChange)
+        .slice(0, 3).map((s: any) => s.strike)
+    : [];
 
-  const processedStrikes = [...currentSession.selectedStrikes]
-    .filter((strike) => {
-      const s = currentSession.strikes[strike]; if (!s) return true;
-      const latestLtp = s.grid.length > 0 ? s.grid[s.grid.length - 1].ltp : s.dayOpen;
-      if (priceAbove !== "" && latestLtp < Number(priceAbove)) return false;
-      if (priceBelow !== "" && latestLtp > Number(priceBelow)) return false;
-      if (callDownCollapsedToggle && !s.isDowntrendActive && !s.isDeepLoss) return false;
-      return true;
-    })
-    .sort((a, b) => {
-      const sA = currentSession.strikes[a]; const sB = currentSession.strikes[b];
-      if (!sA || !sB) return 0;
-      const ltpA = sA.grid.length > 0 ? sA.grid[sA.grid.length - 1].ltp : sA.dayOpen;
-      const ltpB = sB.grid.length > 0 ? sB.grid[sB.grid.length - 1].ltp : sB.dayOpen;
-      if (sortOrder === "high_value") return ltpB - ltpA;
-      if (sortOrder === "low_value") return ltpA - ltpB;
-      return 0;
-    });
+  const processedStrikes = activeSession && activeSession.strikes
+    ? [...currentSession.selectedStrikes]
+        .filter((strike) => {
+          const s = currentSession.strikes[strike]; if (!s) return false;
+          const latestLtp = s.grid.length > 0 ? s.grid[s.grid.length - 1].ltp : s.dayOpen;
+          if (priceAbove !== "" && latestLtp < Number(priceAbove)) return false;
+          if (priceBelow !== "" && latestLtp > Number(priceBelow)) return false;
+          if (callDownCollapsedToggle && !s.isDowntrendActive && !s.isDeepLoss) return false;
+          return true;
+        })
+        .sort((a, b) => {
+          const sA = currentSession.strikes[a]; const sB = currentSession.strikes[b];
+          if (!sA || !sB) return 0;
+          const ltpA = sA.grid.length > 0 ? sA.grid[sA.grid.length - 1].ltp : sA.dayOpen;
+          const ltpB = sB.grid.length > 0 ? sB.grid[sB.grid.length - 1].ltp : sB.dayOpen;
+          if (sortOrder === "high_value") return ltpB - ltpA;
+          if (sortOrder === "low_value") return ltpA - ltpB;
+          return 0;
+        })
+    : [];
 
   const ceStrikesList = processedStrikes.filter((s) => s.endsWith("CE"));
   const peStrikesList = processedStrikes.filter((s) => s.endsWith("PE"));
@@ -558,7 +344,7 @@ export const Module2 = ({ isSplit = false }: { isSplit?: boolean }) => {
                   </span>
                 ) : (
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 5, background: "rgba(100,116,139,0.08)", fontSize: 11, fontWeight: 700, color: "#64748b" }}>
-                    Demo
+                    Inactive
                   </span>
                 )}
               </div>
@@ -595,7 +381,7 @@ export const Module2 = ({ isSplit = false }: { isSplit?: boolean }) => {
                   </span>
                 ) : (
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 8, background: "rgba(100,116,139,0.08)", border: "1.5px solid rgba(100,116,139,0.2)", fontSize: 12, fontWeight: 700, color: "#64748b" }}>
-                    Demo Mode
+                    Inactive
                   </span>
                 )}
               </div>
@@ -603,7 +389,7 @@ export const Module2 = ({ isSplit = false }: { isSplit?: boolean }) => {
           )}
 
           {/* Configuration */}
-          {isConfigExpanded ? (
+          {(isConfigExpanded || !hasStrikes) ? (
             <div
               className="m2-section"
               style={{
@@ -616,7 +402,7 @@ export const Module2 = ({ isSplit = false }: { isSplit?: boolean }) => {
                 <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.15em" }}>
                   Session Configuration
                 </span>
-                {isSplit && (
+                {isSplit && hasStrikes && (
                   <button
                     onClick={() => setIsConfigExpanded(false)}
                     style={{
@@ -697,7 +483,7 @@ export const Module2 = ({ isSplit = false }: { isSplit?: boolean }) => {
               </button>
             </div>
           ) : (
-            isSplit && (
+            isSplit && hasStrikes && (
               <div
                 className="m2-section"
                 style={{
@@ -718,80 +504,192 @@ export const Module2 = ({ isSplit = false }: { isSplit?: boolean }) => {
             )
           )}
 
+          {/* Placeholder card when hasStrikes is false */}
+          {!hasStrikes && (
+            <div
+              className="m2-section"
+              style={{
+                background: "var(--trading-surface)",
+                border: "1.5px dashed var(--trading-border)",
+                borderRadius: 14,
+                padding: "40px 24px",
+                textAlign: "center",
+                boxShadow: "0 1px 8px rgba(0,0,0,0.05)",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 12,
+              }}
+            >
+              <div style={{ fontSize: 32 }}>📊</div>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "var(--trading-text-active)" }}>No Active Tracking Session</h3>
+              <p style={{ margin: 0, fontSize: 13, color: "var(--trading-text-muted)", maxWidth: 450, lineHeight: 1.5 }}>
+                Configure the Index Symbol, Expiry, and select at least one strike price in the panel above, then click <strong>Start Active Session Tracker</strong> to begin real-time options data stream.
+              </p>
+            </div>
+          )}
+
           {/* Toolbar */}
-          <div
-            className="m2-section"
-            style={{
-              background: "var(--trading-surface)", border: "1.5px solid var(--trading-border)",
-              borderRadius: 14, padding: "12px 16px",
-              boxShadow: "0 1px 8px rgba(0,0,0,0.05)", animationDelay: "0.08s",
-            }}
-          >
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {/* Row 1: Primary Tab Control & Toggle */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Strikes:</span>
-                  <SegmentedControl
-                    options={[{ key: "mixed" as const, label: "All" }, { key: "CE" as const, label: "CE" }, { key: "PE" as const, label: "PE" }]}
-                    value={filterType} onChange={setFilterType} size="xs"
-                  />
+          {hasStrikes && (
+            <div
+              className="m2-section"
+              style={{
+                background: "var(--trading-surface)", border: "1.5px solid var(--trading-border)",
+                borderRadius: 14, padding: "12px 16px",
+                boxShadow: "0 1px 8px rgba(0,0,0,0.05)", animationDelay: "0.08s",
+              }}
+            >
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {/* Row 1: Primary Tab Control & Toggle */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Strikes:</span>
+                    <SegmentedControl
+                      options={[{ key: "mixed" as const, label: "All" }, { key: "CE" as const, label: "CE" }, { key: "PE" as const, label: "PE" }]}
+                      value={filterType} onChange={setFilterType} size="xs"
+                    />
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <button
+                      className="m2-reset"
+                      onClick={() => {
+                        setActiveSession(null);
+                      }}
+                      style={{
+                        padding: "5px 12px",
+                        fontSize: 11,
+                        background: "rgba(239, 68, 68, 0.08)",
+                        color: RED,
+                        borderColor: "rgba(239, 68, 68, 0.2)",
+                      }}
+                    >
+                      Stop Session
+                    </button>
+                    {isSplit && (
+                      <button
+                        onClick={() => setIsAdvancedFiltersExpanded(!isAdvancedFiltersExpanded)}
+                        style={{
+                          background: "rgba(4,120,87,0.08)", border: "none", color: GREEN,
+                          fontWeight: 700, fontSize: 11, cursor: "pointer", padding: "6px 12px", borderRadius: 6,
+                          transition: "all 0.15s"
+                        }}
+                      >
+                        {isAdvancedFiltersExpanded ? "Hide Filters ▲" : "Show Filters & Export ▼"}
+                      </button>
+                    )}
+                  </div>
                 </div>
-                {isSplit && (
-                  <button
-                    onClick={() => setIsAdvancedFiltersExpanded(!isAdvancedFiltersExpanded)}
+
+                {/* Row 2: Advanced filters (always visible if not split, toggleable if split) */}
+                {(!isSplit || isAdvancedFiltersExpanded) && (
+                  <div
                     style={{
-                      background: "rgba(4,120,87,0.08)", border: "none", color: GREEN,
-                      fontWeight: 700, fontSize: 11, cursor: "pointer", padding: "6px 12px", borderRadius: 6,
-                      transition: "all 0.15s"
+                      display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10,
+                      paddingTop: 10, borderTop: isSplit ? "1.5px solid var(--trading-border)" : "none",
+                      animation: "m2-enter 0.2s ease both"
                     }}
                   >
-                    {isAdvancedFiltersExpanded ? "Hide Filters ▲" : "Show Filters & Export ▼"}
-                  </button>
+                    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.02em" }}>Sort:</span>
+                        <SegmentedControl
+                          options={[{ key: "default" as const, label: "Default" }, { key: "high_value" as const, label: "High ↓" }, { key: "low_value" as const, label: "Low ↑" }]}
+                          value={sortOrder} onChange={setSortOrder} size="xs"
+                        />
+                      </div>
+                      <div style={{ width: 1, height: 22, background: "var(--trading-border)" }} />
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 500, color: "var(--trading-text-muted)" }}>Above</span>
+                        <input type="number" placeholder="Min" value={priceAbove} onChange={(e) => setPriceAbove(e.target.value === "" ? "" : Number(e.target.value))} className="m2-input" style={{ width: 70 }} />
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 500, color: "var(--trading-text-muted)" }}>Below</span>
+                        <input type="number" placeholder="Max" value={priceBelow} onChange={(e) => setPriceBelow(e.target.value === "" ? "" : Number(e.target.value))} className="m2-input" style={{ width: 70 }} />
+                      </div>
+                      <div style={{ width: 1, height: 22, background: "var(--trading-border)" }} />
+                      <FilterChip label="Call-Down" active={callDownCollapsedToggle} onClick={() => setCallDownCollapsedToggle(!callDownCollapsedToggle)} color={RED} />
+                      <FilterChip label="Top 3" active={highlightTop3} onClick={() => setHighlightTop3(!highlightTop3)} color={AMBER} />
+                      <button className="m2-reset" onClick={() => { setSortOrder("default"); setPriceAbove(""); setPriceBelow(""); setHighlightTop3(false); setCallDownCollapsedToggle(false); setFilterType(isSplit ? "CE" : "mixed"); }}>
+                        Reset Filters
+                      </button>
+                    </div>
+                    <button className="m2-export" onClick={handleExportCSV}>Export CSV</button>
+                  </div>
                 )}
               </div>
-
-              {/* Row 2: Advanced filters (always visible if not split, toggleable if split) */}
-              {(!isSplit || isAdvancedFiltersExpanded) && (
-                <div
-                  style={{
-                    display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10,
-                    paddingTop: 10, borderTop: isSplit ? "1.5px solid var(--trading-border)" : "none",
-                    animation: "m2-enter 0.2s ease both"
-                  }}
-                >
-                  <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, flex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.02em" }}>Sort:</span>
-                      <SegmentedControl
-                        options={[{ key: "default" as const, label: "Default" }, { key: "high_value" as const, label: "High ↓" }, { key: "low_value" as const, label: "Low ↑" }]}
-                        value={sortOrder} onChange={setSortOrder} size="xs"
-                      />
-                    </div>
-                    <div style={{ width: 1, height: 22, background: "var(--trading-border)" }} />
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 500, color: "var(--trading-text-muted)" }}>Above</span>
-                      <input type="number" placeholder="Min" value={priceAbove} onChange={(e) => setPriceAbove(e.target.value === "" ? "" : Number(e.target.value))} className="m2-input" style={{ width: 70 }} />
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 500, color: "var(--trading-text-muted)" }}>Below</span>
-                      <input type="number" placeholder="Max" value={priceBelow} onChange={(e) => setPriceBelow(e.target.value === "" ? "" : Number(e.target.value))} className="m2-input" style={{ width: 70 }} />
-                    </div>
-                    <div style={{ width: 1, height: 22, background: "var(--trading-border)" }} />
-                    <FilterChip label="Call-Down" active={callDownCollapsedToggle} onClick={() => setCallDownCollapsedToggle(!callDownCollapsedToggle)} color={RED} />
-                    <FilterChip label="Top 3" active={highlightTop3} onClick={() => setHighlightTop3(!highlightTop3)} color={AMBER} />
-                    <button className="m2-reset" onClick={() => { setSortOrder("default"); setPriceAbove(""); setPriceBelow(""); setHighlightTop3(false); setCallDownCollapsedToggle(false); setFilterType(isSplit ? "CE" : "mixed"); }}>
-                      Reset
-                    </button>
-                  </div>
-                  <button className="m2-export" onClick={handleExportCSV}>Export CSV</button>
-                </div>
-              )}
             </div>
-          </div>
+          )}
+
+          {/* Futures OI Activity Widget */}
+          {hasStrikes && currentSession.futuresOI && (
+            <div
+              className="m2-section"
+              style={{
+                background: "linear-gradient(135deg, rgba(37, 99, 235, 0.05), rgba(37, 99, 235, 0.02))",
+                border: "1.5px solid rgba(37, 99, 235, 0.15)",
+                borderRadius: 14,
+                padding: "16px 20px",
+                boxShadow: "0 4px 20px rgba(37, 99, 235, 0.03)",
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 16,
+                marginTop: 4,
+                marginBottom: 4
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ background: "rgba(37, 99, 235, 0.1)", color: "#2563eb", borderRadius: 8, padding: "8px 12px", fontWeight: 800, fontSize: 12, letterSpacing: "0.05em" }}>
+                  FUTURES OI
+                </div>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--trading-text-active)" }}>
+                    {currentSession.futuresOI.symbol}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--trading-text-muted)", fontWeight: 500 }}>
+                    Active Index Futures Contract
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 24 }}>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 3 }}>Latest OI</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: "#2563eb" }}>
+                    {(currentSession.futuresOI.oiLatest || 0).toLocaleString()}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 3 }}>OI Buy Pressure</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: (currentSession.futuresOI.oiBuy || 0) > 0 ? GREEN : "var(--trading-text-muted)" }}>
+                    {(currentSession.futuresOI.oiBuy || 0) > 0 ? `+${(currentSession.futuresOI.oiBuy || 0).toLocaleString()}` : "0"}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 3 }}>OI Sell Pressure</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: (currentSession.futuresOI.oiSell || 0) < 0 ? RED : "var(--trading-text-muted)" }}>
+                    {(currentSession.futuresOI.oiSell || 0) < 0 ? (currentSession.futuresOI.oiSell || 0).toLocaleString() : "0"}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 3 }}>OI Range (H / L)</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--trading-text-active)", lineHeight: 1.3 }}>
+                    H: <span style={{ color: "#2563eb", fontWeight: 800 }}>{(currentSession.futuresOI.oiHigh || 0).toLocaleString()}</span>
+                    <br />
+                    L: <span style={{ color: "#6b7280", fontWeight: 800 }}>{(currentSession.futuresOI.oiLow || 0).toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* CE Table */}
-          {(filterType === "mixed" || filterType === "CE") && (
+          {hasStrikes && (filterType === "mixed" || filterType === "CE") && (
             <div className="m2-section" style={{ animationDelay: "0.1s" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: GREEN, display: "inline-block" }} />
@@ -804,7 +702,7 @@ export const Module2 = ({ isSplit = false }: { isSplit?: boolean }) => {
           )}
 
           {/* PE Table */}
-          {(filterType === "mixed" || filterType === "PE") && (
+          {hasStrikes && (filterType === "mixed" || filterType === "PE") && (
             <div className="m2-section" style={{ animationDelay: "0.13s" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: RED, display: "inline-block" }} />
@@ -869,12 +767,27 @@ function StrikeTrackerTable({ strikesList, session, sortedTimestamps, highlightT
               {(!isSplit || showFullColumns) && (
                 <th className="m2-th" style={{ padding: cellPadding, fontSize: "10px", textAlign: "center", minWidth: 80, width: 80, position: isSplit ? "sticky" : undefined, right: isSplit ? 0 : undefined, top: 0, zIndex: 40, background: isSplit ? "var(--trading-bg)" : undefined }}>Low</th>
               )}
+              {(!isSplit || showFullColumns) && (
+                <th className="m2-th" style={{ padding: cellPadding, fontSize: "10px", textAlign: "center", minWidth: 90, width: 90 }}>OI Buy</th>
+              )}
+              {(!isSplit || showFullColumns) && (
+                <th className="m2-th" style={{ padding: cellPadding, fontSize: "10px", textAlign: "center", minWidth: 90, width: 90 }}>OI Sell</th>
+              )}
+              {(!isSplit || showFullColumns) && (
+                <th className="m2-th" style={{ padding: cellPadding, fontSize: "10px", textAlign: "center", minWidth: 95, width: 95 }}>OI High</th>
+              )}
+              {(!isSplit || showFullColumns) && (
+                <th className="m2-th" style={{ padding: cellPadding, fontSize: "10px", textAlign: "center", minWidth: 95, width: 95 }}>OI Low</th>
+              )}
+              {(!isSplit || showFullColumns) && (
+                <th className="m2-th" style={{ padding: cellPadding, fontSize: "10px", textAlign: "center", minWidth: 95, width: 95 }}>OI Mean</th>
+              )}
             </tr>
           </thead>
           <tbody>
             {displayedStrikes.length === 0 ? (
               <tr>
-                <td colSpan={displayedTimestamps.length + (isSplit && !showFullColumns ? 1 : 4)} style={{ padding: "32px 16px", textAlign: "center", fontFamily: "'Inter', sans-serif", fontSize: 13, color: "var(--trading-text-muted)" }}>
+                <td colSpan={displayedTimestamps.length + (isSplit && !showFullColumns ? 1 : 8)} style={{ padding: "32px 16px", textAlign: "center", fontFamily: "'Inter', sans-serif", fontSize: 13, color: "var(--trading-text-muted)" }}>
                   No strikes to display in this category.
                 </td>
               </tr>
@@ -1040,6 +953,41 @@ color: isCellHigh
                         width: 80 
                       }}>
                         {Math.round(s.dayLow)}
+                      </td>
+                    )}
+
+                    {/* OI Buy */}
+                    {(!isSplit || showFullColumns) && (
+                      <td className="m2-td" style={{ padding: cellPadding, fontSize: cellFontSize, textAlign: "center", color: (s.oiBuyLatest || 0) > 0 ? GREEN : "var(--trading-text-muted)", fontWeight: (s.oiBuyLatest || 0) > 0 ? 700 : 400 }}>
+                        {(s.oiBuyLatest || 0) > 0 ? `+${(s.oiBuyLatest || 0).toLocaleString()}` : "0"}
+                      </td>
+                    )}
+
+                    {/* OI Sell */}
+                    {(!isSplit || showFullColumns) && (
+                      <td className="m2-td" style={{ padding: cellPadding, fontSize: cellFontSize, textAlign: "center", color: (s.oiSellLatest || 0) < 0 ? RED : "var(--trading-text-muted)", fontWeight: (s.oiSellLatest || 0) < 0 ? 700 : 400 }}>
+                        {(s.oiSellLatest || 0) < 0 ? (s.oiSellLatest || 0).toLocaleString() : "0"}
+                      </td>
+                    )}
+
+                    {/* OI High */}
+                    {(!isSplit || showFullColumns) && (
+                      <td className="m2-td" style={{ padding: cellPadding, fontSize: cellFontSize, textAlign: "center", color: "var(--trading-text-muted)", fontWeight: 500 }}>
+                        {(s.oiHigh || 0).toLocaleString()}
+                      </td>
+                    )}
+
+                    {/* OI Low */}
+                    {(!isSplit || showFullColumns) && (
+                      <td className="m2-td" style={{ padding: cellPadding, fontSize: cellFontSize, textAlign: "center", color: "var(--trading-text-muted)", fontWeight: 500 }}>
+                        {(s.oiLow || 0).toLocaleString()}
+                      </td>
+                    )}
+
+                    {/* OI Mean */}
+                    {(!isSplit || showFullColumns) && (
+                      <td className="m2-td" style={{ padding: cellPadding, fontSize: cellFontSize, textAlign: "center", color: "#7c3aed", fontWeight: 600 }}>
+                        {(s.oiMean || 0).toLocaleString()}
                       </td>
                     )}
                   </tr>

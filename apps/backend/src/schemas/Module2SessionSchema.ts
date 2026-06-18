@@ -29,6 +29,10 @@ export const Module2SessionSchema = new Schema(
       type: Object, // Map of strike -> baseline price
       default: {},
     },
+    futures_oi_json: {
+      type: Object,
+      default: {},
+    },
   },
   {
     timestamps: { createdAt: "created_at", updatedAt: "updated_at" },

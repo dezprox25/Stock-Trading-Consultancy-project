@@ -10,6 +10,7 @@ export const useSocket = () => {
   const setPivots = useStore((state) => state.setPivots);
   const setIndicators = useStore((state) => state.setIndicators);
   const appendTrackerCell = useStore((state) => state.appendTrackerCell);
+  const updateFuturesOI = useStore((state) => state.updateFuturesOI);
 
   const selectedSymbol = useStore((state) => state.selectedSymbol);
   const selectedTimeframe = useStore((state) => state.selectedTimeframe);
@@ -69,11 +70,15 @@ export const useSocket = () => {
       setIndicators(signal.symbol, selectedTimeframe, selectedMethod, signal);
     });
 
-    // Handle Option Tracker minute boundary ticks
     socket.on(
       "tracker_update",
-      (data: { strike: string; cell: Module2Cell; state: Partial<Module2StrikeState> }) => {
-        appendTrackerCell(data.strike, data.cell, data.state);
+      (data: { strike?: string; cell?: Module2Cell; state?: Partial<Module2StrikeState>; futuresOI?: any }) => {
+        if (data.strike && data.cell && data.state) {
+          appendTrackerCell(data.strike, data.cell, data.state);
+        }
+        if (data.futuresOI) {
+          updateFuturesOI(data.futuresOI);
+        }
       }
     );
 
