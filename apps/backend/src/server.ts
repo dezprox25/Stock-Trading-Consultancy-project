@@ -14,6 +14,7 @@ import redis from "./config/redis";
 import authRouter from "./routes/auth";
 import marketRouter from "./routes/market";
 import trackerRouter from "./routes/tracker";
+import module2Router from "./routes/module2";
 import { initPivotService } from "./services/pivotService";
 import { initDataFeed } from "./services/dataFeed";
 import { initSocketServer } from "./services/socketService";
@@ -78,28 +79,7 @@ app.get("/api/module1/config", (_req, res) => {
   });
 });
 
-// Module 2 Tracker Endpoint
-app.get("/module2/tracker", (_req, res) => {
-  res.json({
-    sessionType: "mixed",
-    indexSymbol: "NIFTY50",
-    expiryDate: "2026-06-04",
-    selectedStrikes: [],
-    strikes: {},
-    mode: "mock",
-  });
-});
 
-app.get("/api/module2/tracker", (_req, res) => {
-  res.json({
-    sessionType: "mixed",
-    indexSymbol: "NIFTY50",
-    expiryDate: "2026-06-04",
-    selectedStrikes: [],
-    strikes: {},
-    mode: "mock",
-  });
-});
 
 // Mount authentication router
 app.use("/auth", authRouter);
@@ -108,6 +88,7 @@ app.use("/api/auth", authRouter);
 // Mount market and tracker routers
 app.use("/api", marketRouter);
 app.use("/api/module2", trackerRouter);
+app.use("/api/module2", module2Router);
 
 // Health Check Endpoint
 app.get("/health", async (_req, res) => {
@@ -172,7 +153,12 @@ const startServer = async () => {
     const redisPingResult = await redis.ping();
     console.log("Redis cache ping successful:", redisPingResult);
   } catch (error) {
-    console.error("Warning: Redis cache could not be contacted:", error);
+    if (process.env.NODE_ENV === "production") {
+      console.error("Fatal: Redis cache could not be contacted:", error);
+      throw new Error("Redis connection failed. Redis is a hard dependency in production.");
+    } else {
+      console.warn("[Redis] Warning: Redis cache could not be contacted in development mode. Continuing server startup.");
+    }
   }
 
   // Initialize core trading services

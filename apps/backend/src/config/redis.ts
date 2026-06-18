@@ -4,39 +4,41 @@ const redisUrl = process.env.REDIS_URL || "redis://127.0.0.1:6379";
 
 class MockRedis {
   private store = new Map<string, string>();
-  
-  async get(key: string) {
+
+  async get(key: string): Promise<string | null> {
     return this.store.get(key) || null;
   }
-  
-  async set(key: string, value: string) {
+
+  async set(key: string, value: string): Promise<string> {
     this.store.set(key, value);
     return "OK";
   }
-  
-  async setex(key: string, seconds: number, value: string) {
+
+  async setex(key: string, seconds: number, value: string): Promise<string> {
     this.store.set(key, value);
     setTimeout(() => this.store.delete(key), seconds * 1000);
     return "OK";
   }
-  
-  async ping() {
+
+  async ping(): Promise<string> {
     return "PONG (In-Memory Mock Mode)";
   }
-  
-  on(event: string, callback: Function) {
+
+  on(event: string, callback: (...args: any[]) => void): this {
     if (event === "connect") {
       setTimeout(() => callback(), 50);
     }
     return this;
   }
+
+  disconnect() {}
 }
 
 let activeClient: any;
 
 try {
   activeClient = new Redis(redisUrl, {
-    maxRetriesPerRequest: null,
+    maxRetriesPerRequest: 1,
     connectTimeout: 1500,
   });
 
@@ -58,8 +60,8 @@ try {
 }
 
 // Proxy wrapper to expose the active client dynamically to all modules importing it
-const proxy = new Proxy({}, {
-  get(target, prop, receiver) {
+const proxy = new Proxy({} as any, {
+  get(target, prop) {
     const value = activeClient[prop];
     if (typeof value === "function") {
       return function (...args: any[]) {
@@ -70,6 +72,5 @@ const proxy = new Proxy({}, {
   }
 });
 
-export default proxy as any;
+export default proxy;
 export { Redis };
-

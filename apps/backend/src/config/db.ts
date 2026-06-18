@@ -1,19 +1,15 @@
 import mongoose from "mongoose";
 
 export const connectDB = async (): Promise<void> => {
-  try {
-    const mongoUri =
-      process.env.MONGODB_URI ||
-      "mongodb://127.0.0.1:27017/stock_dashboard";
+  const mongoUri =
+    process.env.MONGODB_URI ||
+    "mongodb://127.0.0.1:27017/stock_dashboard";
 
-    mongoose.set("bufferCommands", false);
+  mongoose.set("bufferCommands", false);
 
-    await mongoose.connect(mongoUri, {
-      serverSelectionTimeoutMS: 1500,
-    });
+  await mongoose.connect(mongoUri, {
+    serverSelectionTimeoutMS: 1500,
+  });
 
-    console.log("MongoDB connected successfully to:", mongoUri);
-  } catch (error) {
-    console.warn("[MongoDB] Connection failed. Falling back to local in-memory mock database mode.");
-  }
+  console.log("MongoDB connected successfully to:", mongoUri);
 };

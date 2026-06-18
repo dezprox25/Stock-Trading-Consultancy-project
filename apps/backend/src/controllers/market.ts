@@ -143,49 +143,20 @@ export const getOHLCBars = async (req: AuthenticatedRequest, res: Response) => {
     const { symbol, tf } = req.params;
     const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
 
-    let bars: any[] = [];
-    try {
-      const dbBars = await FuturesOHLC.find({ symbol, timeframe: tf })
-        .sort({ bar_time: -1 })
-        .limit(limit);
-      bars = dbBars.reverse().map((b) => ({
-        symbol: b.symbol,
-        timeframe: b.timeframe,
-        open: b.bar_open,
-        high: b.bar_high,
-        low: b.bar_low,
-        close: b.bar_close,
-        openTime: new Date(b.bar_time).getTime(),
-        volume: b.volume
-      }));
-    } catch (err) {
-      console.warn(`[Market] MongoDB offline. Generating mock historical OHLC bars for ${symbol} (${tf}).`);
-      // Generate mock completed bars
-      const now = Date.now();
-      const tfMs = tf === "5m" ? 5 * 60 * 1000 : 60000;
-      let price = 22100;
-      
-      for (let i = limit; i > 0; i--) {
-        const barTime = new Date(now - i * tfMs);
-        const change = (Math.random() - 0.5) * 20;
-        const open = price;
-        const close = price + change;
-        const high = Math.max(open, close) + Math.random() * 10;
-        const low = Math.min(open, close) - Math.random() * 10;
-        
-        bars.push({
-          symbol,
-          timeframe: tf,
-          open: Math.round(open * 100) / 100,
-          high: Math.round(high * 100) / 100,
-          low: Math.round(low * 100) / 100,
-          close: Math.round(close * 100) / 100,
-          openTime: barTime.getTime(),
-          volume: Math.floor(Math.random() * 5000) + 1000
-        });
-        price = close;
-      }
-    }
+    const dbBars = await FuturesOHLC.find({ symbol, timeframe: tf })
+      .sort({ bar_time: -1 })
+      .limit(limit);
+
+    const bars = dbBars.reverse().map((b) => ({
+      symbol: b.symbol,
+      timeframe: b.timeframe,
+      open: b.bar_open,
+      high: b.bar_high,
+      low: b.bar_low,
+      close: b.bar_close,
+      openTime: new Date(b.bar_time).getTime(),
+      volume: b.volume
+    }));
 
     return res.status(200).json(bars);
   } catch (error) {

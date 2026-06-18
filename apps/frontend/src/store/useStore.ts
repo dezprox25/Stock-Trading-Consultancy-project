@@ -44,6 +44,7 @@ interface AppState {
   setActiveSession: (session: Module2SessionData | null) => void;
   updateSessionStrikes: (strikes: string[]) => void;
   appendTrackerCell: (strike: string, cell: Module2Cell, stateUpdate: Partial<Module2StrikeState>) => void;
+  updateFuturesOI: (futuresOI: any) => void;
 
   // Theme Management
   theme: "light" | "dark";
@@ -145,6 +146,19 @@ export const useStore = create<AppState>((set) => ({
           strikes: {
             ...state.activeSession.strikes,
             [strike]: updatedStrikeState
+          }
+        }
+      };
+    }),
+  updateFuturesOI: (futuresOI) =>
+    set((state) => {
+      if (!state.activeSession) return {};
+      return {
+        activeSession: {
+          ...state.activeSession,
+          futuresOI: {
+            ...state.activeSession.futuresOI,
+            ...futuresOI
           }
         }
       };
