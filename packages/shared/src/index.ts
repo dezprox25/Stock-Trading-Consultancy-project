@@ -100,6 +100,7 @@ export interface Module2StrikeState {
 export interface Module2SessionData {
   sessionId: string;
   userId: string;
+  dataSource?: "LIVE_INTERACTIVE_API" | "UNAVAILABLE";
   sessionType: "CE" | "PE" | "mixed";
   indexSymbol: string;
   expiryDate: string;

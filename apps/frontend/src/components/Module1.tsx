@@ -1,38 +1,31 @@
 import { useQuery } from "@tanstack/react-query";
 import { useStore } from "../store/useStore";
-import { api } from "../utils/api";
-import {
-  getClassicPivots,
-  getCamarillaPivots,
-  getFibonacciPivots,
-  getCallState,
-  getPutState,
-} from "../utils/pivots";
+import { api, getModule1LatestMetrics, Module1OiMetricsResponse } from "../utils/api";
 import { Candle } from "@stock/shared";
 import { useEffect, useRef, useState } from "react";
 
 const GREEN = "#047857";
 const RED = "#E53935";
+const BLUE = "#1A5FA8";
 
-// ── Signal state maps ─────────────────────────────────────────────────────────
-const CALL_COLOR_MAP: Record<string, { bg: string; text: string; label: string; desc: string }> = {
-  CALL_BULLISH:          { bg: GREEN,           text: "#fff",     label: "CALL BULLISH",      desc: "Strong bullish — conditions favourable for calls" },
-  CALL_NEAR_RESISTANCE:  { bg: "#F97316",        text: "#fff",     label: "NEAR RESISTANCE",   desc: "Watch closely — potential breakout or rejection" },
-  CALL_POSITIVE_BIAS:    { bg: "#d1fae5",        text: GREEN,      label: "POSITIVE BIAS",     desc: "Price above equilibrium — call-friendly territory" },
-  CALL_NEUTRAL:          { bg: "#fef9c3",        text: "#92400e",  label: "NEUTRAL",           desc: "At pivot — indecision zone, wait for direction" },
-  CALL_BEARISH_BIAS:     { bg: "#fee2e2",        text: RED,        label: "BEARISH BIAS",      desc: "Price below equilibrium — not ideal for call view" },
-  CALL_BEARISH:          { bg: RED,             text: "#fff",     label: "CALL BEARISH",      desc: "Avoid call view — price breaking down" },
-  DIVERGENCE_WARNING:    { bg: "#F97316",        text: "#fff",     label: "DIVERGENCE WARNING",desc: "Data mismatch — verify prices before forming a view" },
+type OiSignal = "STRONG_BULL" | "MILD_BULL" | "NEUTRAL" | "MILD_BEAR" | "STRONG_BEAR" | "DIVERGENCE";
+
+const OI_SIGNAL_MAP: Record<OiSignal, { bg: string; text: string; label: OiSignal; desc: string }> = {
+  STRONG_BULL: { bg: "#22863A", text: "#fff", label: "STRONG_BULL", desc: "Call OI buildup, futures confirmation, and put unwinding align bullish." },
+  MILD_BULL: { bg: "#A8E6A1", text: "#145A1A", label: "MILD_BULL", desc: "Call OI buildup with put unwinding, but without full futures confirmation." },
+  NEUTRAL: { bg: "#F5F5F5", text: "#444", label: "NEUTRAL", desc: "No clear OI direction in the latest row." },
+  MILD_BEAR: { bg: "#F5C4B3", text: "#993C1D", label: "MILD_BEAR", desc: "Call OI unwinding with put buildup, but without full futures confirmation." },
+  STRONG_BEAR: { bg: "#C0392B", text: "#fff", label: "STRONG_BEAR", desc: "Call OI unwinding, futures short bias, and put buildup align bearish." },
+  DIVERGENCE: { bg: "#E6F1FB", text: BLUE, label: "DIVERGENCE", desc: "Options and futures direction conflict. Avoid low-confidence trades." },
 };
 
-const PUT_COLOR_MAP: Record<string, { bg: string; text: string; label: string; desc: string }> = {
-  PUT_BULLISH:           { bg: GREEN,           text: "#fff",     label: "PUT BULLISH",       desc: "Conditions favourable for puts" },
-  PUT_NEAR_SUPPORT:      { bg: "#F97316",        text: "#fff",     label: "NEAR SUPPORT",      desc: "Watch closely — potential breakdown or bounce" },
-  PUT_POSITIVE_BIAS:     { bg: "#d1fae5",        text: GREEN,      label: "POSITIVE BIAS",     desc: "Price below equilibrium — put-friendly territory" },
-  PUT_NEUTRAL:           { bg: "#fef9c3",        text: "#92400e",  label: "NEUTRAL",           desc: "At pivot — indecision zone, wait for direction" },
-  PUT_BEARISH_BIAS:      { bg: "#fee2e2",        text: RED,        label: "BEARISH BIAS",      desc: "Price above equilibrium — not ideal for put view" },
-  PUT_BEARISH:           { bg: RED,             text: "#fff",     label: "PUT BEARISH",       desc: "Avoid put view — price breaking up" },
-  SENTIMENT_ALERT:       { bg: "#7c3aed",        text: "#fff",     label: "SENTIMENT ALERT",   desc: "OI indicates extreme sentiment — review before deciding" },
+const PUT_INVERSE: Record<OiSignal, OiSignal> = {
+  STRONG_BULL: "STRONG_BEAR",
+  MILD_BULL: "MILD_BEAR",
+  NEUTRAL: "NEUTRAL",
+  MILD_BEAR: "MILD_BULL",
+  STRONG_BEAR: "STRONG_BULL",
+  DIVERGENCE: "DIVERGENCE",
 };
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -78,40 +71,95 @@ function PriceCard({ label, value, flash, sub }: { label: string; value: number;
   );
 }
 
-function PivotPill({ label, value, type }: { label: string; value: number; type: "resistance" | "support" | "pivot" }) {
+type OiMetricTone = "positive" | "negative" | "neutral";
+type OiMetric = { label: string; value: number | null; tone: OiMetricTone };
+
+const formatFullOiValue = (value: number | null) =>
+  value === null
+    ? "-"
+    : value.toLocaleString("en-IN", {
+        minimumFractionDigits: Number.isInteger(value) ? 0 : 1,
+        maximumFractionDigits: 1,
+      });
+
+const formatCompactOiValue = (value: number | null) => {
+  if (value === null) return "-";
+  if (Math.abs(value) < 1_000_000) return formatFullOiValue(value);
+
+  return value.toLocaleString("en-IN", {
+    notation: "compact",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  });
+};
+
+const formatTableOiValue = (value: number | null) => {
+  if (value === null) return "-";
+
+  const absValue = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  const compact = (divisor: number, suffix: string) =>
+    `${sign}${(absValue / divisor).toLocaleString("en-IN", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: absValue / divisor >= 10 ? 0 : 1,
+    })}${suffix}`;
+
+  if (absValue >= 10_000_000) return compact(10_000_000, "Cr");
+  if (absValue >= 100_000) return compact(100_000, "L");
+  if (absValue >= 1_000) return compact(1_000, "K");
+  return formatFullOiValue(value);
+};
+
+const getSignalShortLabel = (signal: OiSignal) => {
+  const labels: Record<OiSignal, string> = {
+    STRONG_BULL: "S-BULL",
+    MILD_BULL: "M-BULL",
+    NEUTRAL: "NEUT",
+    MILD_BEAR: "M-BEAR",
+    STRONG_BEAR: "S-BEAR",
+    DIVERGENCE: "DIV",
+  };
+  return labels[signal];
+};
+
+function OiMetricCard({ label, value, tone }: { label: string; value: number | null; tone: OiMetricTone }) {
   const styles = {
-    resistance: { border: "1.5px solid rgba(4,120,87,0.35)", text: GREEN,    bg: "rgba(4,120,87,0.06)" },
-    support:    { border: "1.5px solid rgba(229,57,53,0.35)", text: RED,     bg: "rgba(229,57,53,0.06)" },
-    pivot:      { border: "1.5px solid var(--trading-border)", text: "var(--trading-text-active)", bg: "var(--trading-surface)" },
-  }[type];
+    positive: { border: "1.5px solid rgba(4,120,87,0.35)", text: GREEN, bg: "rgba(4,120,87,0.06)" },
+    negative: { border: "1.5px solid rgba(229,57,53,0.32)", text: RED, bg: "rgba(229,57,53,0.05)" },
+    neutral: { border: "1.5px solid var(--trading-border)", text: "var(--trading-text-active)", bg: "var(--trading-surface)" },
+  }[tone];
+
+  const formattedValue = formatCompactOiValue(value);
+  const fullValue = formatFullOiValue(value);
 
   return (
     <div
+      title={`${label}: ${fullValue}`}
       style={{
-        display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-        padding: "10px 16px", borderRadius: 10,
+        display: "flex", flexDirection: "column", gap: 6,
+        padding: "12px 14px", borderRadius: 10,
         background: styles.bg, border: styles.border,
-        minWidth: 80,
+        minWidth: 0,
+        boxShadow: "0 1px 6px rgba(0,0,0,0.04)",
       }}
     >
       <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: styles.text }}>
         {label}
       </span>
-      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 15, fontWeight: 800, color: styles.text, letterSpacing: "-0.01em" }}>
-        {value.toFixed(1)}
+      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 16, fontWeight: 900, color: styles.text, letterSpacing: 0, lineHeight: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>
+        {formattedValue}
       </span>
     </div>
   );
 }
 
-function SignalCard({ title, state, map, icon }: { title: string; state: string; map: typeof CALL_COLOR_MAP; icon: React.ReactNode }) {
-  const props = map[state];
-  const isBullish = state.includes("BULLISH") || state.includes("POSITIVE");
-  const isBearish = state.includes("BEARISH");
-  const isWarning = state.includes("WARNING") || state.includes("ALERT") || state.includes("NEAR");
-
-  const accentColor = !props ? "var(--trading-text-muted)"
-    : isBullish ? GREEN : isBearish ? RED : isWarning ? "#F97316" : "var(--trading-text-muted)";
+function SignalCard({ title, signal, icon }: { title: string; signal: OiSignal; icon: React.ReactNode }) {
+  const props = OI_SIGNAL_MAP[signal];
+  const accentColor =
+    signal.includes("BULL") ? GREEN :
+    signal.includes("BEAR") ? RED :
+    signal === "DIVERGENCE" ? BLUE :
+    "var(--trading-text-muted)";
 
   return (
     <div
@@ -143,12 +191,12 @@ function SignalCard({ title, state, map, icon }: { title: string; state: string;
           }}
         >
           <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, fontWeight: 800, letterSpacing: "0.03em" }}>
-            {props?.label || "NO SIGNAL"}
+            {props?.label || "NEUTRAL"}
           </span>
         </div>
 
         <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 500, color: "var(--trading-text-muted)", margin: 0, lineHeight: 1.5 }}>
-          {props?.desc || "Awaiting market feed…"}
+          {props?.desc || "Awaiting market feed..."}
         </p>
       </div>
     </div>
@@ -160,8 +208,6 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
   const [showFullGrid, setShowFullGrid] = useState(false);
   const selectedSymbol = useStore((s) => s.selectedSymbol);
   const selectedTimeframe = useStore((s) => s.selectedTimeframe);
-  const selectedMethod = useStore((s) => s.selectedMethod);
-  const setSelectedMethod = useStore((s) => s.setSelectedMethod);
   const prices = useStore((s) => s.prices);
 
   const prevFutRef = useRef<number>(0);
@@ -196,43 +242,171 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
     enabled: !!selectedSymbol,
   });
 
-  const calcPivots = (method: string) => {
-    if (method === "camarilla") return getCamarillaPivots;
-    if (method === "fibonacci") return getFibonacciPivots;
-    return getClassicPivots;
-  };
+  const { data: latestOiMetrics } = useQuery<Module1OiMetricsResponse | null>({
+    queryKey: ["module1-latest-oi"],
+    queryFn: getModule1LatestMetrics,
+    retry: false,
+  });
 
-  const getIndicatorProps = (state: string, isCall: boolean) => {
-    const map = isCall ? CALL_COLOR_MAP : PUT_COLOR_MAP;
-    return map[state] || { bg: "rgba(100,116,139,0.1)", text: "var(--trading-text-muted)", label: "NO SIGNAL", desc: "Awaiting market feed…" };
-  };
-
-  const tableRows = ohlcBars.map((bar, i, arr) => {
+  const tableRows = ohlcBars.map((bar) => {
     const timeLabel = new Date(bar.openTime).toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" });
-    const prevBar = i > 0 ? arr[i - 1] : bar;
-    const pivots = calcPivots(selectedMethod)(prevBar.high, prevBar.low, prevBar.close);
-    const callState = getCallState(bar.close, pivots.p, pivots.r1, pivots.s1, spotLtp || bar.close);
-    const putState  = getPutState(bar.close, pivots.p, pivots.r1, pivots.s1, spotLtp || bar.close);
-    return { time: timeLabel, open: bar.open, high: bar.high, low: bar.low, close: bar.close, pivots, callState, putState };
+    return { time: timeLabel, open: bar.open, high: bar.high, low: bar.low, close: bar.close };
   });
 
   const latestRow = tableRows.length > 0 ? [...tableRows].reverse()[0] : null;
   const spread    = futLtp > 0 && spotLtp > 0 ? futLtp - spotLtp : 0;
 
+  const metricsFromApiPayload = (payload: Module1OiMetricsResponse): OiMetric[] => [
+    { label: "C_TL", value: payload.c_tl, tone: "neutral" },
+    { label: "C_MN", value: payload.c_mn, tone: "neutral" },
+    { label: "C_Hig", value: payload.c_hig, tone: "neutral" },
+    { label: "C_Low", value: payload.c_low, tone: "neutral" },
+    { label: "C_Buy", value: payload.c_buy, tone: "positive" },
+    { label: "C_Sell", value: payload.c_sell, tone: "negative" },
+    { label: "F_Buy", value: payload.f_buy, tone: "positive" },
+    { label: "F_Sell", value: payload.f_sell, tone: "negative" },
+    { label: "P_TL", value: payload.p_tl, tone: "neutral" },
+    { label: "P_MN", value: payload.p_mn, tone: "neutral" },
+    { label: "P_Hig", value: payload.p_hig, tone: "neutral" },
+    { label: "P_Low", value: payload.p_low, tone: "neutral" },
+    { label: "P_Buy", value: payload.p_buy, tone: "positive" },
+    { label: "P_Sell", value: payload.p_sell, tone: "negative" },
+  ];
+
+  // MARKET DATA API will eventually provide real option-chain C_TL/P_TL and futures OI values.
+  // Until that backend endpoint is available, Module1 keeps these proxy calculations so the UI
+  // remains functional without Interactive Data API or any order/trading actions.
+  const buildFallbackOiMetrics = (rowIndex: number, useLiveValues = false): OiMetric[] => {
+    const row = tableRows[rowIndex];
+    if (!row) return [];
+
+    const previous = tableRows[rowIndex - 1] || row;
+    const rowsToDate = tableRows.slice(0, rowIndex + 1);
+    const callTotal = row.close;
+    const putTotal = useLiveValues && spotLtp > 0 ? spotLtp : row.low;
+    const futuresTotal = useLiveValues && futLtp > 0 ? futLtp : row.close;
+    const callDelta = callTotal - previous.close;
+    const putDelta = putTotal - previous.low;
+    const futuresDelta = futuresTotal - previous.close;
+    const callMean = rowsToDate.reduce((sum, item) => sum + item.close, 0) / rowsToDate.length;
+    const putMean = rowsToDate.reduce((sum, item) => sum + item.low, 0) / rowsToDate.length;
+    const sessionHigh = Math.max(...rowsToDate.map((item) => item.high));
+    const sessionLow = Math.min(...rowsToDate.map((item) => item.low));
+
+    return [
+      { label: "C_TL", value: callTotal, tone: "neutral" },
+      { label: "C_MN", value: callMean, tone: "neutral" },
+      { label: "C_Hig", value: sessionHigh, tone: "neutral" },
+      { label: "C_Low", value: sessionLow, tone: "neutral" },
+      { label: "C_Buy", value: Math.max(callDelta, 0), tone: "positive" },
+      { label: "C_Sell", value: Math.min(callDelta, 0), tone: "negative" },
+      { label: "F_Buy", value: Math.max(futuresDelta, 0), tone: "positive" },
+      { label: "F_Sell", value: Math.min(futuresDelta, 0), tone: "negative" },
+      { label: "P_TL", value: putTotal, tone: "neutral" },
+      { label: "P_MN", value: putMean, tone: "neutral" },
+      { label: "P_Hig", value: sessionHigh, tone: "neutral" },
+      { label: "P_Low", value: sessionLow, tone: "neutral" },
+      { label: "P_Buy", value: Math.max(putDelta, 0), tone: "positive" },
+      { label: "P_Sell", value: Math.min(putDelta, 0), tone: "negative" },
+    ];
+  };
+
+  const getMetricValue = (metrics: Array<{ label: string; value: number | null }>, label: string) =>
+    metrics.find((metric) => metric.label === label)?.value ?? 0;
+
+  const getCallOiSignal = (metrics: Array<{ label: string; value: number | null }>): OiSignal => {
+    const threshold = selectedSymbol.includes("BANK") ? 300 : 500;
+    const cBuy = getMetricValue(metrics, "C_Buy");
+    const cSell = getMetricValue(metrics, "C_Sell");
+    const pBuy = getMetricValue(metrics, "P_Buy");
+    const pSell = getMetricValue(metrics, "P_Sell");
+    const fBuy = getMetricValue(metrics, "F_Buy");
+    const fSell = getMetricValue(metrics, "F_Sell");
+
+    if (cBuy > threshold && fBuy > 0 && pSell < 0) return "STRONG_BULL";
+    if (cBuy > 0 && pSell < 0) return "MILD_BULL";
+    if (cSell < -threshold && fSell < 0 && pBuy > 0) return "STRONG_BEAR";
+    if (cSell < 0 && pBuy > 0) return "MILD_BEAR";
+    if ((cBuy > 0 && fSell < 0) || (cSell < 0 && fBuy > 0)) return "DIVERGENCE";
+    return "NEUTRAL";
+  };
+
+  const latestIndex = tableRows.length - 1;
+  const fallbackLatestMetrics = latestIndex >= 0 ? buildFallbackOiMetrics(latestIndex, true) : [];
+  const oiMetrics = latestOiMetrics ? metricsFromApiPayload(latestOiMetrics) : fallbackLatestMetrics;
+  const latestCallSignal = latestOiMetrics?.callSignal || (oiMetrics.length > 0 ? getCallOiSignal(oiMetrics) : "NEUTRAL");
+  const latestPutSignal = latestOiMetrics?.putSignal || PUT_INVERSE[latestCallSignal];
+
   const displayedRows = showFullGrid || !isSplit
     ? [...tableRows].reverse()
     : [...tableRows].reverse().slice(0, 12);
 
-  const methodLabels: Record<string, string> = {
-    classic: "Classic Pivot", camarilla: "Camarilla Pivot", fibonacci: "Fibonacci Pivot",
-  };
-
   // Table cell color helpers
   const tdBase: React.CSSProperties = {
-    fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 500,
-    padding: "12px 16px", whiteSpace: "nowrap",
+    fontFamily: "'Inter', sans-serif", fontSize: isSplit ? 10 : 11, fontWeight: 600,
+    padding: isSplit ? "4px 3px" : "5px 4px", whiteSpace: "nowrap",
     borderBottom: "1px solid var(--trading-border)",
+    borderRight: "1px solid var(--trading-border)",
     color: "var(--trading-text-active)",
+    lineHeight: 1.15,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  };
+
+  const historicalHeaders = [
+    { label: "Time", align: "left", key: "time" },
+    { label: "Tin", align: "center", key: "tin" },
+    ...[
+      "C_TL",
+      "C_MN",
+      "C_Hig",
+      "C_Low",
+      "C_Buy",
+      "C_Sell",
+      "F_Buy",
+      "F_Sell",
+      "P_TL",
+      "P_MN",
+      "P_Hig",
+      "P_Low",
+      "P_Buy",
+      "P_Sell",
+    ].map((label) => ({ label, align: "right", key: label })),
+    { label: "Call Signal", align: "center", key: "call" },
+    { label: "Put Signal", align: "center", key: "put" },
+  ].filter((h) => {
+    if (isSplit && !showFullGrid) {
+      return !["C_MN", "C_Hig", "C_Low", "P_MN", "P_Hig", "P_Low"].includes(h.key);
+    }
+    return true;
+  });
+
+  const visibleOiMetricKeys = new Set(historicalHeaders.map((h) => h.key));
+  const countVisible = (keys: string[]) => historicalHeaders.filter((h) => keys.includes(h.key)).length;
+  const marketColumnCount = countVisible(["time", "tin"]);
+  const callColumnCount = countVisible(["C_TL", "C_MN", "C_Hig", "C_Low", "C_Buy", "C_Sell"]);
+  const futuresColumnCount = countVisible(["F_Buy", "F_Sell"]);
+  const putColumnCount = countVisible(["P_TL", "P_MN", "P_Hig", "P_Low", "P_Buy", "P_Sell"]);
+  const signalColumnCount = countVisible(["call", "put"]);
+  const tableColumnWidths: Record<string, string> = {
+    time: "5.5%",
+    tin: "3.5%",
+    C_TL: "5.8%",
+    C_MN: "5.8%",
+    C_Hig: "5.8%",
+    C_Low: "5.8%",
+    C_Buy: "5.4%",
+    C_Sell: "5.4%",
+    F_Buy: "5.2%",
+    F_Sell: "5.2%",
+    P_TL: "5.8%",
+    P_MN: "5.8%",
+    P_Hig: "5.8%",
+    P_Low: "5.8%",
+    P_Buy: "5.4%",
+    P_Sell: "5.4%",
+    call: "5.4%",
+    put: "5.4%",
   };
 
   return (
@@ -277,21 +451,52 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
 
         .m1-th {
           font-family: 'Inter', sans-serif;
-          font-size: 11px; font-weight: 700;
-          letter-spacing: 0.08em; text-transform: uppercase;
-          padding: 12px 16px; white-space: nowrap;
+          font-size: 9px; font-weight: 800;
+          letter-spacing: 0.02em; text-transform: uppercase;
+          padding: 5px 4px; white-space: nowrap;
           color: var(--trading-text-muted);
           background: var(--trading-bg);
           border-bottom: 1.5px solid var(--trading-border);
           position: sticky; top: 0; z-index: 2;
+          line-height: 1.1;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
 
         .m1-badge {
           display: inline-flex; align-items: center; gap: 5px;
-          padding: 4px 10px; border-radius: 6px;
+          padding: 3px 5px; border-radius: 4px;
           font-family: 'Inter', sans-serif;
-          font-size: 10px; font-weight: 700;
-          letter-spacing: 0.05em; text-transform: uppercase;
+          font-size: 9px; font-weight: 800;
+          letter-spacing: 0; text-transform: uppercase;
+          line-height: 1;
+          max-width: 100%;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .m1-oi-table-wrap {
+          overflow-x: hidden;
+          overflow-y: auto;
+          max-height: ${isSplit ? "420px" : "48vh"};
+          border-radius: 8px;
+          border: 1.5px solid var(--trading-border);
+          background: var(--trading-surface);
+          box-shadow: 0 1px 8px rgba(0,0,0,0.04);
+        }
+
+        .m1-oi-table {
+          width: 100%;
+          table-layout: fixed;
+          border-collapse: collapse;
+          text-align: left;
+          border: 1px solid var(--trading-border);
+        }
+
+        @media (max-width: 1180px) {
+          .m1-th { font-size: 8px; padding: 4px 2px; }
+          .m1-badge { font-size: 8px; padding: 2px 3px; }
         }
       `}</style>
 
@@ -319,12 +524,12 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 11, fontWeight: 800, color: GREEN, textTransform: "uppercase", letterSpacing: "0.05em" }}>M1 · Pivot</span>
+                <span style={{ fontSize: 11, fontWeight: 800, color: GREEN, textTransform: "uppercase", letterSpacing: "0.05em" }}>M1 · OI</span>
                 <span style={{ fontSize: 13, fontWeight: 800, color: "var(--trading-text-active)", borderLeft: "1px solid var(--trading-border)", paddingLeft: 8 }}>{selectedSymbol}</span>
               </div>
               <div style={{ display: "flex", gap: 6, fontSize: 10, fontWeight: 700 }}>
                 <span style={{ background: "rgba(4,120,87,0.1)", color: GREEN, padding: "3px 8px", borderRadius: 5 }}>TF: {selectedTimeframe}</span>
-                <span style={{ background: "var(--trading-bg)", border: "1px solid var(--trading-border)", color: "var(--trading-text-muted)", padding: "3px 8px", borderRadius: 5 }}>{selectedMethod.toUpperCase()}</span>
+                <span style={{ background: "var(--trading-bg)", border: "1px solid var(--trading-border)", color: "var(--trading-text-muted)", padding: "3px 8px", borderRadius: 5 }}>TIN 18+</span>
               </div>
             </div>
           ) : (
@@ -343,7 +548,7 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
                     Module 01
                   </div>
                   <h1 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: "var(--trading-text-active)", letterSpacing: "-0.02em" }}>
-                    Live Pivot Intelligence
+                    Live OI Change Tracker
                   </h1>
                 </div>
                 <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--trading-text-muted)", background: "var(--trading-bg)", padding: "3px 10px", borderRadius: 6, border: "1.5px solid var(--trading-border)" }}>
@@ -368,8 +573,8 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
                     borderRadius: 8,
                   }}
                 >
-                  <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 9, fontWeight: 600, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Formula</span>
-                  <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, color: GREEN }}>{methodLabels[selectedMethod] || selectedMethod}</span>
+                  <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 9, fontWeight: 600, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Signal Engine</span>
+                  <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, color: GREEN }}>{selectedSymbol.includes("BANK") ? "Threshold 300" : "Threshold 500"}</span>
                 </div>
               </div>
             </div>
@@ -424,7 +629,7 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
             </div>
           )}
 
-          {/* Formula selector */}
+          {/* OI reference */}
           {!isSplit && (
             <div
               className="m1-section"
@@ -436,22 +641,16 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
               }}
             >
               <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginRight: 4 }}>
-                Pivot Formula
+                OI Signal Reference
               </span>
               <div style={{ width: 1, height: 20, background: "var(--trading-border)" }} />
-              {[{ key: "classic", label: "Classic" }, { key: "camarilla", label: "Camarilla" }, { key: "fibonacci", label: "Fibonacci" }].map((m) => (
-                <button
-                  key={m.key}
-                  onClick={() => setSelectedMethod(m.key as any)}
-                  className={`m1-method-btn ${selectedMethod === m.key ? "m1-method-active" : "m1-method-inactive"}`}
-                >
-                  {m.label}
-                </button>
-              ))}
+              <span className="m1-method-btn m1-method-active">10m Spec</span>
+              <span className="m1-method-btn m1-method-inactive">Tin starts 18</span>
+              <span className="m1-method-btn m1-method-inactive">{selectedSymbol.includes("BANK") ? "BANKNIFTY 300-700" : "NIFTY 500-1000"}</span>
             </div>
           )}
 
-          {/* Pivot levels */}
+          {/* OI dashboard metrics */}
           {!isSplit && latestRow && (
             <div
               className="m1-section"
@@ -461,15 +660,17 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
               }}
             >
               <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14 }}>
-                Current Pivot Levels — {latestRow.time}
+                OI Dashboard Metrics - {latestRow.time}
               </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                {(["r3", "r2", "r1"] as const).map((k) => (
-                  <PivotPill key={k} label={k.toUpperCase()} value={(latestRow.pivots as any)[k]} type="resistance" />
-                ))}
-                <PivotPill label="P" value={latestRow.pivots.p} type="pivot" />
-                {(["s1", "s2", "s3"] as const).map((k) => (
-                  <PivotPill key={k} label={k.toUpperCase()} value={(latestRow.pivots as any)[k]} type="support" />
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(96px, 1fr))",
+                  gap: 10,
+                }}
+              >
+                {oiMetrics.map((metric) => (
+                  <OiMetricCard key={metric.label} label={metric.label} value={metric.value} tone={metric.tone} />
                 ))}
               </div>
             </div>
@@ -479,9 +680,8 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
           {!isSplit && latestRow && (
             <div className="m1-section" style={{ display: "flex", gap: 14, animationDelay: "0.11s" }}>
               <SignalCard
-                title="Call Signal — Latest"
-                state={latestRow.callState}
-                map={CALL_COLOR_MAP}
+                title="Call Signal - Latest"
+                signal={latestCallSignal}
                 icon={
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
@@ -490,9 +690,8 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
                 }
               />
               <SignalCard
-                title="Put Signal — Latest"
-                state={latestRow.putState}
-                map={PUT_COLOR_MAP}
+                title="Put Signal - Latest"
+                signal={latestPutSignal}
                 icon={
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/>
@@ -505,52 +704,44 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
 
           {/* Historical table */}
           <div className="m1-section" style={{ animationDelay: "0.13s" }}>
-            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
-              Historical Pivot Data
+            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>
+              Historical OI Dashboard Data
             </div>
-            <div
-              style={{
-                overflowX: "auto", borderRadius: 12, border: "1.5px solid var(--trading-border)",
-                background: "var(--trading-surface)",
-                boxShadow: "0 1px 8px rgba(0,0,0,0.04)",
-              }}
-            >
-              <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+            <div className="m1-oi-table-wrap">
+              <table className="m1-oi-table">
+                <colgroup>
+                  {historicalHeaders.map((h) => (
+                    <col key={h.key} style={{ width: tableColumnWidths[h.key] || "5%" }} />
+                  ))}
+                </colgroup>
                 <thead>
                   <tr>
-                    {[
-                      { label: "Time",        align: "left",    key: "time" },
-                      { label: "Spot LTP",    align: "right",   key: "spot" },
-                      { label: "Fut LTP",     align: "right",   key: "fut" },
-                      { label: "Open",        align: "right",   key: "open" },
-                      { label: "High",        align: "right",   key: "high" },
-                      { label: "Close",       align: "right",   key: "close" },
-                      { label: "P",           align: "center",  key: "p" },
-                      { label: "R1",          align: "center",  key: "r1" },
-                      { label: "R2",          align: "center",  key: "r2" },
-                      { label: "R3",          align: "center",  key: "r3" },
-                      { label: "S1",          align: "center",  key: "s1" },
-                      { label: "S2",          align: "center",  key: "s2" },
-                      { label: "S3",          align: "center",  key: "s3" },
-                      { label: "Call Signal", align: "center",  key: "call" },
-                      { label: "Put Signal",  align: "center",  key: "put" },
-                    ].filter((h) => {
-                      if (isSplit && !showFullGrid) {
-                        return !["open", "high", "spot", "fut", "r1", "r2", "r3", "s1", "s2", "s3"].includes(h.key);
-                      }
-                      if (isSplit) {
-                        return !["open", "high", "r2", "r3", "s2", "s3"].includes(h.key);
-                      }
-                      return true;
-                    }).map((h) => {
-                      const isP = h.key === "p";
-                      const isResistance = ["r1", "r2", "r3"].includes(h.key);
-                      const isSupport = ["s1", "s2", "s3"].includes(h.key);
+                    {marketColumnCount > 0 && (
+                      <th className="m1-th" colSpan={marketColumnCount} style={{ textAlign: "center", borderRight: "1px solid var(--trading-border)", color: "var(--trading-text-muted)" }}>TIME</th>
+                    )}
+                    {callColumnCount > 0 && (
+                      <th className="m1-th" colSpan={callColumnCount} style={{ textAlign: "center", borderRight: "1px solid var(--trading-border)", color: GREEN, background: "rgba(4,120,87,0.08)" }}>CALL SIDE</th>
+                    )}
+                    {futuresColumnCount > 0 && (
+                      <th className="m1-th" colSpan={futuresColumnCount} style={{ textAlign: "center", borderRight: "1px solid var(--trading-border)", color: BLUE, background: "rgba(26,95,168,0.08)" }}>FUTURES</th>
+                    )}
+                    {putColumnCount > 0 && (
+                      <th className="m1-th" colSpan={putColumnCount} style={{ textAlign: "center", borderRight: "1px solid var(--trading-border)", color: RED, background: "rgba(229,57,53,0.08)" }}>PUT SIDE</th>
+                    )}
+                    {signalColumnCount > 0 && (
+                      <th className="m1-th" colSpan={signalColumnCount} style={{ textAlign: "center", color: "var(--trading-text-muted)", background: "rgba(100,116,139,0.08)" }}>SIGNALS</th>
+                    )}
+                  </tr>
+                  <tr>
+                    {historicalHeaders.map((h) => {
+                      const isOiStart = h.key === "C_TL";
+                      const isPositive = ["C_Buy", "F_Buy", "P_Buy"].includes(h.key);
+                      const isNegative = ["C_Sell", "F_Sell", "P_Sell"].includes(h.key);
                       const isSignalStart = h.key === "call";
 
                       let color = "var(--trading-text-muted)";
-                      if (isResistance) color = GREEN;
-                      else if (isSupport) color = RED;
+                      if (isPositive) color = GREEN;
+                      else if (isNegative) color = RED;
 
                       return (
                         <th
@@ -559,10 +750,12 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
                           style={{
                             textAlign: h.align as any,
                             color,
-                            borderLeft: isP || isSignalStart ? "1px solid var(--trading-border)" : undefined,
-                            padding: isSplit ? "12px 14px" : "12px 16px",
-                            fontSize: isSplit ? "11px" : "11px",
+                            borderLeft: isOiStart || isSignalStart ? "1px solid var(--trading-border)" : undefined,
+                            borderRight: "1px solid var(--trading-border)",
+                            padding: isSplit ? "4px 2px" : "5px 3px",
+                            fontSize: isSplit ? "8px" : "9px",
                           }}
+                          title={h.label}
                         >
                           {h.label}
                         </th>
@@ -572,16 +765,19 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
                 </thead>
                 <tbody>
                   {isLoading ? (
-                    <tr><td colSpan={isSplit ? (showFullGrid ? 9 : 5) : 15} style={{ ...tdBase, textAlign: "center", padding: "32px 0", color: "var(--trading-text-muted)" }}>Loading market data…</td></tr>
+                    <tr><td colSpan={historicalHeaders.length} style={{ ...tdBase, textAlign: "center", padding: "32px 0", color: "var(--trading-text-muted)" }}>Loading market data…</td></tr>
                   ) : tableRows.length === 0 ? (
-                    <tr><td colSpan={isSplit ? (showFullGrid ? 9 : 5) : 15} style={{ ...tdBase, textAlign: "center", padding: "32px 0", color: "var(--trading-text-muted)" }}>Awaiting finalized timeframe boundaries.</td></tr>
+                    <tr><td colSpan={historicalHeaders.length} style={{ ...tdBase, textAlign: "center", padding: "32px 0", color: "var(--trading-text-muted)" }}>Awaiting finalized timeframe boundaries.</td></tr>
                   ) : (
                     displayedRows.map((row, idx) => {
                       const isLatest = idx === 0;
-                      const displaySpot = isLatest && spotLtp > 0 ? spotLtp : row.close - 35;
-                      const displayFut  = isLatest && futLtp > 0  ? futLtp  : row.close;
-                      const callProps   = getIndicatorProps(row.callState, true);
-                      const putProps    = getIndicatorProps(row.putState, false);
+                      const rowIndex = tableRows.length - 1 - idx;
+                      const tin = isLatest && latestOiMetrics ? latestOiMetrics.tin : 18 + rowIndex;
+                      const rowOiMetrics = isLatest && latestOiMetrics ? metricsFromApiPayload(latestOiMetrics) : buildFallbackOiMetrics(rowIndex, isLatest);
+                      const callSignal = isLatest && latestOiMetrics ? latestOiMetrics.callSignal : getCallOiSignal(rowOiMetrics);
+                      const putSignal = isLatest && latestOiMetrics ? latestOiMetrics.putSignal : PUT_INVERSE[callSignal];
+                      const callProps = OI_SIGNAL_MAP[callSignal];
+                      const putProps = OI_SIGNAL_MAP[putSignal];
 
                       const callBadge: React.CSSProperties = {
                         background: callProps.bg,
@@ -598,43 +794,41 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
                           className="m1-tr"
                           style={{ background: isLatest ? "rgba(4,120,87,0.04)" : "transparent", transition: "background 0.15s" }}
                         >
-                          <td style={{ ...tdBase, padding: isSplit ? "12px 14px" : "12px 16px", fontSize: isSplit ? "12px" : "13px", fontWeight: isLatest ? 700 : 500, color: isLatest ? GREEN : "var(--trading-text-active)" }}>
+                          <td
+                            title={row.time}
+                            style={{ ...tdBase, textAlign: "center", fontWeight: isLatest ? 800 : 600, color: isLatest ? GREEN : "var(--trading-text-active)" }}
+                          >
                             {row.time}
                             {isLatest && !isSplit && (
-                              <span style={{ marginLeft: 8, padding: "2px 6px", borderRadius: 4, background: "rgba(4,120,87,0.12)", color: GREEN, fontSize: 9, fontWeight: 700, letterSpacing: "0.08em" }}>
-                                LIVE
-                              </span>
+                              <span title="Latest row" style={{ marginLeft: 3, display: "inline-block", width: 5, height: 5, borderRadius: "50%", background: GREEN }} />
                             )}
                           </td>
-                          {(!isSplit || showFullGrid) && (
-                            <td style={{ ...tdBase, padding: isSplit ? "12px 14px" : "12px 16px", fontSize: isSplit ? "12px" : "13px", textAlign: "right", fontWeight: isLatest ? 700 : 500, color: isLatest && spotFlash === "up" ? GREEN : isLatest && spotFlash === "down" ? RED : "var(--trading-text-active)", transition: "color 0.3s" }}>
-                              {displaySpot.toFixed(1)}
-                            </td>
-                          )}
-                          {(!isSplit || showFullGrid) && (
-                            <td style={{ ...tdBase, padding: isSplit ? "12px 14px" : "12px 16px", fontSize: isSplit ? "12px" : "13px", textAlign: "right", fontWeight: isLatest ? 700 : 500, color: isLatest && futFlash === "up" ? GREEN : isLatest && futFlash === "down" ? RED : "var(--trading-text-active)", transition: "color 0.3s" }}>
-                              {displayFut.toFixed(1)}
-                            </td>
-                          )}
-                          {!isSplit && <td style={{ ...tdBase, padding: "12px 16px", color: "var(--trading-text-muted)" }}>{row.open.toFixed(1)}</td>}
-                          {!isSplit && <td style={{ ...tdBase, padding: "12px 16px", color: "var(--trading-text-muted)" }}>{row.high.toFixed(1)}</td>}
-                          <td style={{ ...tdBase, padding: isSplit ? "12px 14px" : "12px 16px", fontSize: isSplit ? "12px" : "13px", textAlign: "right", fontWeight: 600 }}>{row.close.toFixed(1)}</td>
-                          <td style={{ ...tdBase, padding: isSplit ? "12px 14px" : "12px 16px", fontSize: isSplit ? "12px" : "13px", textAlign: "center", borderLeft: "1px solid var(--trading-border)", fontWeight: 600 }}>{row.pivots.p.toFixed(1)}</td>
-                          {(!isSplit || showFullGrid) && (
-                            <td style={{ ...tdBase, padding: isSplit ? "12px 14px" : "12px 16px", fontSize: isSplit ? "12px" : "13px", textAlign: "center", color: GREEN, fontWeight: 600 }}>{row.pivots.r1.toFixed(1)}</td>
-                          )}
-                          {!isSplit && <td style={{ ...tdBase, padding: "12px 16px", textAlign: "center", color: GREEN }}>{row.pivots.r2.toFixed(1)}</td>}
-                          {!isSplit && <td style={{ ...tdBase, padding: "12px 16px", textAlign: "center", color: GREEN }}>{row.pivots.r3.toFixed(1)}</td>}
-                          {(!isSplit || showFullGrid) && (
-                            <td style={{ ...tdBase, padding: isSplit ? "12px 14px" : "12px 16px", fontSize: isSplit ? "12px" : "13px", textAlign: "center", color: RED, fontWeight: 600 }}>{row.pivots.s1.toFixed(1)}</td>
-                          )}
-                          {!isSplit && <td style={{ ...tdBase, padding: "12px 16px", textAlign: "center", color: RED }}>{row.pivots.s2.toFixed(1)}</td>}
-                          {!isSplit && <td style={{ ...tdBase, padding: "12px 16px", textAlign: "center", color: RED }}>{row.pivots.s3.toFixed(1)}</td>}
-                          <td style={{ ...tdBase, padding: isSplit ? "12px 14px" : "12px 16px", fontSize: isSplit ? "12px" : "13px", textAlign: "center", borderLeft: "1px solid var(--trading-border)" }}>
-                            <span className="m1-badge" style={callBadge}>{callProps.label}</span>
+                          <td style={{ ...tdBase, textAlign: "center", color: "var(--trading-text-muted)", fontWeight: 800 }}>
+                            {tin}
                           </td>
-                          <td style={{ ...tdBase, padding: isSplit ? "12px 14px" : "12px 16px", fontSize: isSplit ? "12px" : "13px", textAlign: "center" }}>
-                            <span className="m1-badge" style={putBadge}>{putProps.label}</span>
+                          {rowOiMetrics.filter((metric) => visibleOiMetricKeys.has(metric.label)).map((metric, metricIdx) => {
+                            const color = metric.tone === "positive" ? GREEN : metric.tone === "negative" ? RED : "var(--trading-text-active)";
+                            return (
+                              <td
+                                key={metric.label}
+                                title={`${metric.label}: ${formatFullOiValue(metric.value)}`}
+                                style={{
+                                  ...tdBase,
+                                  textAlign: "right",
+                                  borderLeft: metricIdx === 0 ? "1px solid var(--trading-border)" : undefined,
+                                  color,
+                                  fontWeight: metric.tone === "neutral" ? 600 : 800,
+                                }}
+                              >
+                                {formatTableOiValue(metric.value)}
+                              </td>
+                            );
+                          })}
+                          <td style={{ ...tdBase, textAlign: "center", borderLeft: "1px solid var(--trading-border)" }}>
+                            <span className="m1-badge" title={callProps.label} style={callBadge}>{getSignalShortLabel(callSignal)}</span>
+                          </td>
+                          <td style={{ ...tdBase, textAlign: "center" }}>
+                            <span className="m1-badge" title={putProps.label} style={putBadge}>{getSignalShortLabel(putSignal)}</span>
                           </td>
                         </tr>
                       );
@@ -661,7 +855,7 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
                 }}
                 className="secondary-btn"
               >
-                {showFullGrid ? "Collapse to Compact Grid ▲" : `Show Full Grid (${tableRows.length} Rows, 9 Columns) ▼`}
+                {showFullGrid ? "Collapse to Compact Grid ▲" : `Show Full Grid (${tableRows.length} Rows, ${historicalHeaders.length} Columns) ▼`}
               </button>
             )}
           </div>

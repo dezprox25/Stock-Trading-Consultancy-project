@@ -1,0 +1,162 @@
+import { Tick } from "@stock/shared";
+
+type OiSignal = "STRONG_BULL" | "MILD_BULL" | "NEUTRAL" | "MILD_BEAR" | "STRONG_BEAR" | "DIVERGENCE";
+
+export interface Module1OiMetrics {
+  timestamp: string;
+  dataSource: "LIVE_MARKET_API" | "SIMULATOR";
+  tin: number;
+  c_tl: number;
+  c_mn: number;
+  c_hig: number;
+  c_low: number;
+  c_buy: number;
+  c_sell: number;
+  f_buy: number;
+  f_sell: number;
+  p_tl: number;
+  p_mn: number;
+  p_hig: number;
+  p_low: number;
+  p_buy: number;
+  p_sell: number;
+  callSignal: OiSignal;
+  putSignal: OiSignal;
+}
+
+const PUT_INVERSE: Record<OiSignal, OiSignal> = {
+  STRONG_BULL: "STRONG_BEAR",
+  MILD_BULL: "MILD_BEAR",
+  NEUTRAL: "NEUTRAL",
+  MILD_BEAR: "MILD_BULL",
+  STRONG_BEAR: "STRONG_BULL",
+  DIVERGENCE: "DIVERGENCE",
+};
+
+const ceOiBySymbol = new Map<string, number>();
+const peOiBySymbol = new Map<string, number>();
+const rows: Module1OiMetrics[] = [];
+const futuresOiRows: number[] = [];
+
+let latestFuturesOi = 0;
+let latestSecondBucket = "";
+let latestRow: Module1OiMetrics | null = null;
+let activeDataSource: Module1OiMetrics["dataSource"] = "SIMULATOR";
+
+export const setModule1OiDataSource = (dataSource: Module1OiMetrics["dataSource"]) => {
+  activeDataSource = dataSource;
+  if (latestRow) latestRow.dataSource = dataSource;
+};
+
+const toIstTimestamp = (date: Date): string => {
+  const ist = new Date(date.getTime() + 5.5 * 60 * 60 * 1000);
+  return `${ist.toISOString().slice(0, 19)}+05:30`;
+};
+
+const sumValues = (map: Map<string, number>) =>
+  Array.from(map.values()).reduce((sum, value) => sum + value, 0);
+
+const avg = (values: number[]) =>
+  values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length;
+
+const getCallSignal = (row: Pick<Module1OiMetrics, "c_buy" | "c_sell" | "p_buy" | "p_sell" | "f_buy" | "f_sell">): OiSignal => {
+  const threshold = 500;
+
+  if (row.c_buy > threshold && row.f_buy > 0 && row.p_sell < 0) return "STRONG_BULL";
+  if (row.c_buy > 0 && row.p_sell < 0) return "MILD_BULL";
+  if (row.c_sell < -threshold && row.f_sell < 0 && row.p_buy > 0) return "STRONG_BEAR";
+  if (row.c_sell < 0 && row.p_buy > 0) return "MILD_BEAR";
+  if ((row.c_buy > 0 && row.f_sell < 0) || (row.c_sell < 0 && row.f_buy > 0)) return "DIVERGENCE";
+  return "NEUTRAL";
+};
+
+const createOrUpdateLatestRow = (timestamp: Date) => {
+  const secondBucket = timestamp.toISOString().slice(0, 19);
+  const isNewRow = latestSecondBucket !== secondBucket;
+  const previous = isNewRow ? rows[rows.length - 1] || null : rows[rows.length - 2] || null;
+  const previousFuturesOi = isNewRow
+    ? futuresOiRows[futuresOiRows.length - 1] || 0
+    : futuresOiRows[futuresOiRows.length - 2] || 0;
+
+  if (isNewRow) {
+    latestSecondBucket = secondBucket;
+    latestRow = null;
+  }
+
+  const cTl = Math.round(sumValues(ceOiBySymbol));
+  const pTl = Math.round(sumValues(peOiBySymbol));
+  const fOi = Math.round(latestFuturesOi);
+
+  const cDelta = previous ? cTl - previous.c_tl : cTl;
+  const pDelta = previous ? pTl - previous.p_tl : pTl;
+  const fDelta = previousFuturesOi ? fOi - previousFuturesOi : fOi;
+
+  const rowsForSeries = isNewRow ? rows : rows.slice(0, -1);
+  const cSeries = [...rowsForSeries.map((row) => row.c_tl), cTl];
+  const pSeries = [...rowsForSeries.map((row) => row.p_tl), pTl];
+
+  const baseRow: Module1OiMetrics = {
+    timestamp: toIstTimestamp(timestamp),
+    dataSource: activeDataSource,
+    tin: latestRow?.tin ?? (previous ? previous.tin + 1 : 18),
+    c_tl: cTl,
+    c_mn: Math.round(avg(cSeries)),
+    c_hig: Math.max(...cSeries),
+    c_low: Math.min(...cSeries),
+    c_buy: Math.max(cDelta, 0),
+    c_sell: Math.min(cDelta, 0),
+    f_buy: Math.max(fDelta, 0),
+    f_sell: Math.min(fDelta, 0),
+    p_tl: pTl,
+    p_mn: Math.round(avg(pSeries)),
+    p_hig: Math.max(...pSeries),
+    p_low: Math.min(...pSeries),
+    p_buy: Math.max(pDelta, 0),
+    p_sell: Math.min(pDelta, 0),
+    callSignal: "NEUTRAL",
+    putSignal: "NEUTRAL",
+  };
+
+  baseRow.callSignal = getCallSignal(baseRow);
+  baseRow.putSignal = PUT_INVERSE[baseRow.callSignal];
+
+  if (isNewRow || rows.length === 0) {
+    rows.push(baseRow);
+    futuresOiRows.push(fOi);
+    if (rows.length > 240) {
+      rows.shift();
+      futuresOiRows.shift();
+    }
+  } else {
+    rows[rows.length - 1] = baseRow;
+    futuresOiRows[futuresOiRows.length - 1] = fOi;
+  }
+
+  latestRow = baseRow;
+};
+
+// MARKET DATA API is the intended real source for option-chain OI and futures OI.
+// For now this consumes existing backend live/simulator ticks only; no Interactive Data API,
+// frontend secrets, order placement, order modification, or cancellation is involved.
+export const ingestModule1OiTick = (tick: Tick) => {
+  if (tick.oi === undefined || Number.isNaN(tick.oi)) return;
+
+  if (tick.symbol.endsWith("CE")) {
+    ceOiBySymbol.set(tick.symbol, tick.oi);
+  } else if (tick.symbol.endsWith("PE")) {
+    peOiBySymbol.set(tick.symbol, tick.oi);
+  } else if (tick.symbol.endsWith("-FUT") || tick.symbol.includes("FUT")) {
+    latestFuturesOi = tick.oi;
+  } else {
+    return;
+  }
+
+  createOrUpdateLatestRow(tick.timestamp || new Date());
+};
+
+export const getLatestModule1OiMetrics = (): Module1OiMetrics => {
+  if (latestRow) return latestRow;
+
+  createOrUpdateLatestRow(new Date());
+  return latestRow!;
+};

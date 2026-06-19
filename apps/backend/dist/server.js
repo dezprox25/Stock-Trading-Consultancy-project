@@ -18,6 +18,8 @@ const redis_1 = __importDefault(require("./config/redis"));
 const auth_1 = __importDefault(require("./routes/auth"));
 const market_1 = __importDefault(require("./routes/market"));
 const tracker_1 = __importDefault(require("./routes/tracker"));
+const module2_1 = __importDefault(require("./routes/module2"));
+const zebuOAuth_1 = require("./controllers/zebuOAuth");
 const pivotService_1 = require("./services/pivotService");
 const dataFeed_1 = require("./services/dataFeed");
 const socketService_1 = require("./services/socketService");
@@ -52,6 +54,8 @@ const globalLimiter = (0, express_rate_limit_1.default)({
     legacyHeaders: false,
 });
 app.use("/api/", globalLimiter);
+app.get("/api/module1/zebu/oauth/callback", zebuOAuth_1.zebuOAuthCallback);
+app.get("/api/module1/zebu/oauth/status", zebuOAuth_1.getZebuOAuthStatusEndpoint);
 // Module 1 Config Endpoint
 app.get("/module1/config", (_req, res) => {
     res.json({
@@ -73,33 +77,13 @@ app.get("/api/module1/config", (_req, res) => {
         defaultMethod: "classic",
     });
 });
-// Module 2 Tracker Endpoint
-app.get("/module2/tracker", (_req, res) => {
-    res.json({
-        sessionType: "mixed",
-        indexSymbol: "NIFTY50",
-        expiryDate: "2026-06-04",
-        selectedStrikes: [],
-        strikes: {},
-        mode: "mock",
-    });
-});
-app.get("/api/module2/tracker", (_req, res) => {
-    res.json({
-        sessionType: "mixed",
-        indexSymbol: "NIFTY50",
-        expiryDate: "2026-06-04",
-        selectedStrikes: [],
-        strikes: {},
-        mode: "mock",
-    });
-});
 // Mount authentication router
 app.use("/auth", auth_1.default);
 app.use("/api/auth", auth_1.default);
 // Mount market and tracker routers
 app.use("/api", market_1.default);
 app.use("/api/module2", tracker_1.default);
+app.use("/api/module2", module2_1.default);
 // Health Check Endpoint
 app.get("/health", async (_req, res) => {
     const mongoStatus = mongooseConnectionStatus();
@@ -142,14 +126,29 @@ app.use((err, _req, res, _next) => {
 const PORT = process.env.PORT || 5001;
 const startServer = async () => {
     // Establish MongoDB Atlas Connection
-    await (0, db_1.connectDB)();
+    try {
+        await (0, db_1.connectDB)();
+    }
+    catch (error) {
+        if (process.env.NODE_ENV === "production") {
+            console.error("Fatal: MongoDB could not be contacted:", error);
+            throw error;
+        }
+        console.warn("[MongoDB] Warning: database unavailable in development mode. Continuing with in-memory/demo flows.");
+    }
     // Validate Redis Connection
     try {
         const redisPingResult = await redis_1.default.ping();
         console.log("Redis cache ping successful:", redisPingResult);
     }
     catch (error) {
-        console.error("Warning: Redis cache could not be contacted:", error);
+        if (process.env.NODE_ENV === "production") {
+            console.error("Fatal: Redis cache could not be contacted:", error);
+            throw new Error("Redis connection failed. Redis is a hard dependency in production.");
+        }
+        else {
+            console.warn("[Redis] Warning: Redis cache could not be contacted in development mode. Continuing server startup.");
+        }
     }
     // Initialize core trading services
     (0, pivotService_1.initPivotService)();

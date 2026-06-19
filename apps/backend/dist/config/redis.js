@@ -30,11 +30,12 @@ class MockRedis {
         }
         return this;
     }
+    disconnect() { }
 }
 let activeClient;
 try {
     activeClient = new ioredis_1.default(redisUrl, {
-        maxRetriesPerRequest: null,
+        maxRetriesPerRequest: 1,
         connectTimeout: 1500,
     });
     activeClient.on("error", (err) => {
@@ -57,7 +58,7 @@ catch (error) {
 }
 // Proxy wrapper to expose the active client dynamically to all modules importing it
 const proxy = new Proxy({}, {
-    get(target, prop, receiver) {
+    get(target, prop) {
         const value = activeClient[prop];
         if (typeof value === "function") {
             return function (...args) {

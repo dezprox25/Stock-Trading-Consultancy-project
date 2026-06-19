@@ -93,8 +93,6 @@ function TopBar({
   handleSplitToggle: () => void;
 }) {
   const [time, setTime] = useState(new Date());
-  const theme = useStore((s) => s.theme);
-  const toggleTheme = useStore((s) => s.toggleTheme);
   const selectedTimeframe = useStore((s) => s.selectedTimeframe);
   const setSelectedTimeframe = useStore((s) => s.setSelectedTimeframe);
 
@@ -237,19 +235,6 @@ function TopBar({
           )}
         </button>
 
-        <button
-          onClick={toggleTheme}
-          style={{
-            fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 600,
-            padding: "5px 14px", borderRadius: 6,
-            border: "1.5px solid var(--trading-border)", background: "transparent",
-            color: "var(--trading-text-muted)", cursor: "pointer",
-            display: "flex", alignItems: "center", gap: 6,
-          }}
-        >
-          {theme === "dark" ? "Light Mode" : "Dark Mode"}
-        </button>
-
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", paddingLeft: 12, borderLeft: "1.5px solid var(--trading-border)" }}>
           <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 9, fontWeight: 600, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>User</span>
           <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 700, color: "var(--trading-text-active)" }}>{user.name}</span>
@@ -304,7 +289,6 @@ function App() {
   const user = useStore((s) => s.user);
   const setAuth = useStore((s) => s.setAuth);
   const clearAuth = useStore((s) => s.clearAuth);
-  const theme = useStore((s) => s.theme);
 
   const [isInitializing, setIsInitializing] = useState(true);
 
@@ -349,11 +333,6 @@ function App() {
     };
     checkAuth();
   }, [setAuth]);
-
-  useEffect(() => {
-    if (theme === "dark") document.documentElement.classList.add("dark");
-    else document.documentElement.classList.remove("dark");
-  }, [theme]);
 
   useSocket();
 

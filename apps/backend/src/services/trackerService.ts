@@ -3,6 +3,7 @@ import { Module2StrikeTick } from "../models/Module2StrikeTick";
 import redis from "../config/redis";
 import { broadcastTrackerUpdate } from "./socketService";
 import { Module2SessionData, Module2StrikeState, Module2Cell, TrendBadgeState } from "@stock/shared";
+import { getModule2DataSource, logModule2InteractiveStatus } from "./module2InteractiveDataService";
 
 // In-memory cache for active tracker sessions to avoid database load
 export const activeSessions: Record<string, Module2SessionData> = {};
@@ -23,6 +24,8 @@ const getFuturesSymbol = (index: string): string => {
  * Initializes the Module 2 tracking engine and schedules the minute boundary loop
  */
 export const initTrackerEngine = async () => {
+  logModule2InteractiveStatus();
+
   // Load any existing active sessions from DB on startup (self-healing)
   try {
     const today = new Date();
@@ -431,6 +434,7 @@ export const startTrackerSession = async (
   const sessionData: Module2SessionData = {
     sessionId: doc._id.toString(),
     userId,
+    dataSource: getModule2DataSource(),
     sessionType,
     indexSymbol,
     expiryDate,
@@ -602,6 +606,7 @@ export const resumeSession = async (sessionId: string): Promise<Module2SessionDa
   const sessionData: Module2SessionData = {
     sessionId: doc._id.toString(),
     userId: doc.user_id.toString(),
+    dataSource: getModule2DataSource(),
     sessionType: doc.session_type as any,
     indexSymbol: doc.index_symbol,
     expiryDate: doc.expiry_date,

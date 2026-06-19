@@ -3,13 +3,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateCustomTimeframe = exports.getOptionChain = exports.getIndicatorsEndpoint = exports.getPivotLevelsEndpoint = exports.getOHLCBars = exports.getFuturesData = exports.getSpotPrice = exports.updateWatchlist = exports.getWatchlist = void 0;
+exports.updateCustomTimeframe = exports.getOptionChain = exports.getModule1LatestOi = exports.getIndicatorsEndpoint = exports.getPivotLevelsEndpoint = exports.getOHLCBars = exports.getFuturesData = exports.getSpotPrice = exports.updateWatchlist = exports.getWatchlist = void 0;
 const Watchlist_1 = require("../models/Watchlist");
 const FuturesOHLC_1 = require("../models/FuturesOHLC");
 const redis_1 = __importDefault(require("../config/redis"));
 const shared_1 = require("@stock/shared");
 const ohlcAggregator_1 = require("../services/ohlcAggregator");
 const pivotService_1 = require("../services/pivotService");
+const module1OiService_1 = require("../services/module1OiService");
 // Local in-memory watchlists store for when MongoDB is offline
 const inMemoryWatchlists = new Map();
 // Seed default watchlists for guest users
@@ -133,48 +134,19 @@ const getOHLCBars = async (req, res) => {
     try {
         const { symbol, tf } = req.params;
         const limit = req.query.limit ? parseInt(req.query.limit) : 50;
-        let bars = [];
-        try {
-            const dbBars = await FuturesOHLC_1.FuturesOHLC.find({ symbol, timeframe: tf })
-                .sort({ bar_time: -1 })
-                .limit(limit);
-            bars = dbBars.reverse().map((b) => ({
-                symbol: b.symbol,
-                timeframe: b.timeframe,
-                open: b.bar_open,
-                high: b.bar_high,
-                low: b.bar_low,
-                close: b.bar_close,
-                openTime: new Date(b.bar_time).getTime(),
-                volume: b.volume
-            }));
-        }
-        catch (err) {
-            console.warn(`[Market] MongoDB offline. Generating mock historical OHLC bars for ${symbol} (${tf}).`);
-            // Generate mock completed bars
-            const now = Date.now();
-            const tfMs = tf === "5m" ? 5 * 60 * 1000 : 60000;
-            let price = 22100;
-            for (let i = limit; i > 0; i--) {
-                const barTime = new Date(now - i * tfMs);
-                const change = (Math.random() - 0.5) * 20;
-                const open = price;
-                const close = price + change;
-                const high = Math.max(open, close) + Math.random() * 10;
-                const low = Math.min(open, close) - Math.random() * 10;
-                bars.push({
-                    symbol,
-                    timeframe: tf,
-                    open: Math.round(open * 100) / 100,
-                    high: Math.round(high * 100) / 100,
-                    low: Math.round(low * 100) / 100,
-                    close: Math.round(close * 100) / 100,
-                    openTime: barTime.getTime(),
-                    volume: Math.floor(Math.random() * 5000) + 1000
-                });
-                price = close;
-            }
-        }
+        const dbBars = await FuturesOHLC_1.FuturesOHLC.find({ symbol, timeframe: tf })
+            .sort({ bar_time: -1 })
+            .limit(limit);
+        const bars = dbBars.reverse().map((b) => ({
+            symbol: b.symbol,
+            timeframe: b.timeframe,
+            open: b.bar_open,
+            high: b.bar_high,
+            low: b.bar_low,
+            close: b.bar_close,
+            openTime: new Date(b.bar_time).getTime(),
+            volume: b.volume
+        }));
         return res.status(200).json(bars);
     }
     catch (error) {
@@ -222,6 +194,16 @@ const getIndicatorsEndpoint = async (req, res) => {
     }
 };
 exports.getIndicatorsEndpoint = getIndicatorsEndpoint;
+const getModule1LatestOi = async (_req, res) => {
+    try {
+        return res.status(200).json((0, module1OiService_1.getLatestModule1OiMetrics)());
+    }
+    catch (error) {
+        console.error("Get Module1 Latest OI Error:", error);
+        return res.status(500).json({ error: "Internal Server Error" });
+    }
+};
+exports.getModule1LatestOi = getModule1LatestOi;
 // Generate options chain based on current NIFTY spot index
 const getOptionChain = async (req, res) => {
     try {

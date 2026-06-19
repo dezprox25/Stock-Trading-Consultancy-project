@@ -8,6 +8,7 @@ import {
   getOHLCBars,
   getPivotLevelsEndpoint,
   getIndicatorsEndpoint,
+  getModule1LatestOi,
   getOptionChain,
   updateCustomTimeframe
 } from "../controllers/market";
@@ -28,5 +29,6 @@ router.post("/market/custom-timeframe", authenticate, updateCustomTimeframe);
 
 // Module 1 Indicators
 router.get("/module1/indicators/:symbol", authenticate, getIndicatorsEndpoint);
+router.get("/module1/latest-oi", getModule1LatestOi);
 
 export default router;

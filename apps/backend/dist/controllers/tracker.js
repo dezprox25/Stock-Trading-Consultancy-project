@@ -187,7 +187,10 @@ const buildCSV = (session) => {
         maxMinutes = Math.max(maxMinutes, state.grid.length);
     }
     // Generate headers
-    const headers = ["Strike", "Day Open", "Day High", "Day Low", "Trend Badge", "Pct Change"];
+    const headers = [
+        "Strike", "Day Open", "Day High", "Day Low", "Trend Badge", "Pct Change",
+        "OI Buy (Latest)", "OI Sell (Latest)", "OI High", "OI Low"
+    ];
     // Reconstruct timestamps for header minutes using the first available strike grid
     const firstStrikeKey = Object.keys(session.strikes)[0];
     const firstStrike = firstStrikeKey ? session.strikes[firstStrikeKey] : null;
@@ -206,7 +209,11 @@ const buildCSV = (session) => {
             s.dayHigh,
             s.dayLow,
             s.trendBadge,
-            `${s.pctChange}%`
+            `${s.pctChange}%`,
+            s.oiBuyLatest || 0,
+            s.oiSellLatest || 0,
+            s.oiHigh || 0,
+            s.oiLow || 0
         ];
         for (let m = 0; m < maxMinutes; m++) {
             const cell = s.grid[m];

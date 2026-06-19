@@ -15,6 +15,7 @@ import authRouter from "./routes/auth";
 import marketRouter from "./routes/market";
 import trackerRouter from "./routes/tracker";
 import module2Router from "./routes/module2";
+import { getZebuOAuthStatusEndpoint, zebuOAuthCallback } from "./controllers/zebuOAuth";
 import { initPivotService } from "./services/pivotService";
 import { initDataFeed } from "./services/dataFeed";
 import { initSocketServer } from "./services/socketService";
@@ -55,6 +56,9 @@ const globalLimiter = rateLimit({
 });
 
 app.use("/api/", globalLimiter);
+
+app.get("/api/module1/zebu/oauth/callback", zebuOAuthCallback);
+app.get("/api/module1/zebu/oauth/status", getZebuOAuthStatusEndpoint);
 
 // Module 1 Config Endpoint
 app.get("/module1/config", (_req, res) => {
@@ -146,7 +150,15 @@ const PORT = process.env.PORT || 5001;
 
 const startServer = async () => {
   // Establish MongoDB Atlas Connection
-  await connectDB();
+  try {
+    await connectDB();
+  } catch (error) {
+    if (process.env.NODE_ENV === "production") {
+      console.error("Fatal: MongoDB could not be contacted:", error);
+      throw error;
+    }
+    console.warn("[MongoDB] Warning: database unavailable in development mode. Continuing with in-memory/demo flows.");
+  }
 
   // Validate Redis Connection
   try {

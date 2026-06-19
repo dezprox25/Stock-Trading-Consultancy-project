@@ -8,13 +8,27 @@ const Module2Session_1 = require("../models/Module2Session");
 const Module2StrikeTick_1 = require("../models/Module2StrikeTick");
 const redis_1 = __importDefault(require("../config/redis"));
 const socketService_1 = require("./socketService");
+const module2InteractiveDataService_1 = require("./module2InteractiveDataService");
 // In-memory cache for active tracker sessions to avoid database load
 exports.activeSessions = {};
 let boundaryTimer = null;
 /**
+ * Helper to resolve the futures symbol for a given index symbol
+ */
+const getFuturesSymbol = (index) => {
+    if (index === "NIFTY50")
+        return "NIFTY-FUT";
+    if (index === "BANKNIFTY")
+        return "BANKNIFTY-FUT";
+    if (index === "FINNIFTY")
+        return "FINNIFTY-FUT";
+    return `${index}-FUT`;
+};
+/**
  * Initializes the Module 2 tracking engine and schedules the minute boundary loop
  */
 const initTrackerEngine = async () => {
+    (0, module2InteractiveDataService_1.logModule2InteractiveStatus)();
     // Load any existing active sessions from DB on startup (self-healing)
     try {
         const today = new Date();
@@ -68,10 +82,54 @@ const executeMinuteBoundary = async () => {
     console.log(`[TrackerEngine] Boundary trigger at ${timeString}. Processing ${sessionIds.length} sessions...`);
     for (const sessionId of sessionIds) {
         const session = exports.activeSessions[sessionId];
+        // 1. Calculate Futures OI Delta
+        const futSymbol = getFuturesSymbol(session.indexSymbol);
+        const rawFutPrice = await redis_1.default.get(`ltp:${futSymbol}`);
+        const rawFutOi = await redis_1.default.get(`oi:${futSymbol}`);
+        let futLtp = rawFutPrice ? parseFloat(rawFutPrice) : 0;
+        let futOi = rawFutOi ? Math.floor(parseFloat(rawFutOi)) : 0;
+        let futuresOI = session.futuresOI;
+        if (!futuresOI) {
+            futuresOI = {
+                symbol: futSymbol,
+                oiLatest: futOi,
+                oiDelta: 0,
+                oiBuy: 0,
+                oiSell: 0,
+                oiHigh: futOi,
+                oiLow: futOi
+            };
+            session.futuresOI = futuresOI;
+        }
+        if (futOi === 0) {
+            futOi = futuresOI.oiLatest || 0;
+        }
+        const prevFutOi = futuresOI.oiLatest || 0;
+        const futOiDelta = prevFutOi > 0 ? futOi - prevFutOi : 0;
+        const futOiBuy = futOiDelta > 0 ? futOiDelta : 0;
+        const futOiSell = futOiDelta < 0 ? futOiDelta : 0;
+        futuresOI.oiLatest = futOi;
+        futuresOI.oiDelta = futOiDelta;
+        futuresOI.oiBuy = futOiBuy;
+        futuresOI.oiSell = futOiSell;
+        futuresOI.oiHigh = futuresOI.oiHigh ? Math.max(futuresOI.oiHigh, futOi) : futOi;
+        futuresOI.oiLow = (futuresOI.oiLow && futuresOI.oiLow > 0) ? Math.min(futuresOI.oiLow, futOi) : futOi;
+        session.futuresOI = futuresOI;
+        try {
+            await Module2Session_1.Module2Session.findByIdAndUpdate(sessionId, {
+                futures_oi_json: futuresOI
+            });
+        }
+        catch (err) {
+            // Ignore DB write errors
+        }
+        // 2. Process Options Strikes
         for (const strike of session.selectedStrikes) {
-            // 1. Fetch latest price from Redis cache
+            // Fetch latest price & OI from Redis cache
             const rawPrice = await redis_1.default.get(`ltp:${strike}`);
             let ltp = rawPrice ? Math.floor(parseFloat(rawPrice)) : 0;
+            const rawOi = await redis_1.default.get(`oi:${strike}`);
+            let oi = rawOi ? Math.floor(parseFloat(rawOi)) : 0;
             let strikeState = session.strikes[strike];
             // If strike state doesn't exist, initialize it
             if (!strikeState) {
@@ -85,7 +143,16 @@ const executeMinuteBoundary = async () => {
                     trendBadge: "FLAT",
                     isDowntrendActive: false,
                     isDeepLoss: false,
-                    pctChange: 0
+                    pctChange: 0,
+                    oiLatest: oi,
+                    oiBuyLatest: 0,
+                    oiSellLatest: 0,
+                    oiHigh: oi,
+                    oiLow: oi,
+                    oiMean: oi,
+                    // Internal running totals for mean calculation (not in shared interface)
+                    _oiRunningSum: oi,
+                    _oiRowCount: 1
                 };
                 session.strikes[strike] = strikeState;
             }
@@ -111,12 +178,62 @@ const executeMinuteBoundary = async () => {
             else if (ltp === 0) {
                 ltp = strikeState.dayOpen || 100;
             }
-            // Update High/Low boundaries
+            // If OI is 0, fallback to previous OI
+            if (oi === 0 && strikeState.grid.length > 0) {
+                oi = strikeState.grid[strikeState.grid.length - 1].oi || 0;
+            }
+            else if (oi === 0) {
+                oi = strikeState.oiLatest || 0;
+            }
+            // Calculate OI Delta, Buy, Sell
+            // First-row handling: at rowIndex 0 (no previous row), entire opening OI is treated as initial buy
+            const isFirstRow = strikeState.grid.length === 0;
+            let oiDelta = 0;
+            let oiBuy = 0;
+            let oiSell = 0;
+            if (isFirstRow) {
+                // At 9:15 AM first row: no previous to compare — treat all OI as initial buy
+                oiBuy = oi;
+                oiSell = 0;
+                oiDelta = 0;
+            }
+            else {
+                const prevOi = strikeState.grid[strikeState.grid.length - 1].oi || 0;
+                oiDelta = prevOi > 0 ? oi - prevOi : 0;
+                oiBuy = oiDelta > 0 ? oiDelta : 0;
+                oiSell = oiDelta < 0 ? oiDelta : 0;
+            }
+            // Update High/Low boundaries for Price
             strikeState.dayHigh = Math.max(strikeState.dayHigh || ltp, ltp);
             strikeState.dayLow = Math.min(strikeState.dayLow || ltp, ltp);
             const denominator = strikeState.dayOpen || 100;
             strikeState.pctChange = Number((((ltp - denominator) / denominator) * 100).toFixed(2));
-            // 2. Evaluate trend badge
+            // Update boundaries for OI
+            if (isFirstRow) {
+                // First row: seed High and Low from initial OI value
+                strikeState.oiHigh = oi;
+                strikeState.oiLow = oi;
+            }
+            else {
+                strikeState.oiHigh = strikeState.oiHigh ? Math.max(strikeState.oiHigh, oi) : oi;
+                strikeState.oiLow = (strikeState.oiLow && strikeState.oiLow > 0) ? Math.min(strikeState.oiLow, oi) : oi;
+            }
+            strikeState.oiLatest = oi;
+            strikeState.oiBuyLatest = oiBuy;
+            strikeState.oiSellLatest = oiSell;
+            // Update running OI sum and compute mean
+            const s = strikeState;
+            if (isFirstRow) {
+                // Seed running sum on first row
+                s._oiRunningSum = oi;
+                s._oiRowCount = 1;
+            }
+            else {
+                s._oiRunningSum = (s._oiRunningSum || 0) + oi;
+                s._oiRowCount = (s._oiRowCount || 1) + 1;
+            }
+            strikeState.oiMean = s._oiRowCount > 0 ? Math.round(s._oiRunningSum / s._oiRowCount) : oi;
+            // 3. Evaluate trend badge
             const previousBadge = strikeState.trendBadge;
             const recentLtpList = strikeState.grid.slice(-4).map(c => c.ltp);
             recentLtpList.push(ltp); // Include current tick to form 5-min lookback
@@ -145,7 +262,7 @@ const executeMinuteBoundary = async () => {
                 newBadge = "REVERSAL";
             }
             strikeState.trendBadge = newBadge;
-            // 3. Evaluate Call-Down Advisory Filter (CE options only)
+            // 4. Evaluate Call-Down Advisory Filter (CE options only)
             const isCE = strike.endsWith("CE");
             if (isCE) {
                 // Deep Loss Check (>15% drop from baseline)
@@ -170,10 +287,14 @@ const executeMinuteBoundary = async () => {
                 minute: minutesSinceStart,
                 timestamp: timeString,
                 isHigh: ltp === strikeState.dayHigh,
-                isLow: ltp === strikeState.dayLow
+                isLow: ltp === strikeState.dayLow,
+                oi,
+                oiDelta,
+                oiBuy,
+                oiSell
             };
             strikeState.grid.push(cell);
-            // 4. Save to Database
+            // Save to Database
             try {
                 await Module2StrikeTick_1.Module2StrikeTick.create({
                     session_id: sessionId,
@@ -183,13 +304,17 @@ const executeMinuteBoundary = async () => {
                     is_day_high: cell.isHigh,
                     is_day_low: cell.isLow,
                     pct_from_open: strikeState.pctChange,
-                    is_downtrend_flagged: strikeState.isDowntrendActive
+                    is_downtrend_flagged: strikeState.isDowntrendActive,
+                    oi,
+                    oi_delta: oiDelta,
+                    oi_buy: oiBuy,
+                    oi_sell: oiSell
                 });
             }
             catch (err) {
                 // Suppress warning to avoid console spamming when DB is offline
             }
-            // 5. Broadcast to connected clients
+            // Broadcast to connected clients
             (0, socketService_1.broadcastTrackerUpdate)(sessionId, {
                 strike,
                 cell,
@@ -199,8 +324,15 @@ const executeMinuteBoundary = async () => {
                     trendBadge: strikeState.trendBadge,
                     isDowntrendActive: strikeState.isDowntrendActive,
                     isDeepLoss: strikeState.isDeepLoss,
-                    pctChange: strikeState.pctChange
-                }
+                    pctChange: strikeState.pctChange,
+                    oiLatest: strikeState.oiLatest,
+                    oiBuyLatest: strikeState.oiBuyLatest,
+                    oiSellLatest: strikeState.oiSellLatest,
+                    oiHigh: strikeState.oiHigh,
+                    oiLow: strikeState.oiLow,
+                    oiMean: strikeState.oiMean
+                },
+                futuresOI: session.futuresOI
             });
         }
     }
@@ -209,12 +341,14 @@ const executeMinuteBoundary = async () => {
  * Starts a new Module 2 tracking session
  */
 const startTrackerSession = async (userId, sessionType, indexSymbol, expiryDate, selectedStrikes) => {
-    // Capture Day Open prices for each selected strike from Redis
+    // Capture Day Open prices and OI for each selected strike from Redis
     const dayOpenPrices = {};
     const strikes = {};
     for (const strike of selectedStrikes) {
         const rawPrice = await redis_1.default.get(`ltp:${strike}`);
         const ltp = rawPrice ? Math.floor(parseFloat(rawPrice)) : 0; // Capture baseline at first observation
+        const rawOi = await redis_1.default.get(`oi:${strike}`);
+        const oi = rawOi ? Math.floor(parseFloat(rawOi)) : 0;
         dayOpenPrices[strike] = ltp;
         strikes[strike] = {
             strike,
@@ -225,44 +359,54 @@ const startTrackerSession = async (userId, sessionType, indexSymbol, expiryDate,
             trendBadge: "FLAT",
             isDowntrendActive: false,
             isDeepLoss: false,
-            pctChange: 0
+            pctChange: 0,
+            oiLatest: oi,
+            oiBuyLatest: 0,
+            oiSellLatest: 0,
+            oiHigh: oi,
+            oiLow: oi,
+            oiMean: oi,
+            _oiRunningSum: oi,
+            _oiRowCount: 1
         };
     }
+    // Resolve Futures symbols and fetch details
+    const futSymbol = getFuturesSymbol(indexSymbol);
+    const rawFutPrice = await redis_1.default.get(`ltp:${futSymbol}`);
+    const rawFutOi = await redis_1.default.get(`oi:${futSymbol}`);
+    const futPrice = rawFutPrice ? parseFloat(rawFutPrice) : 0;
+    const futOi = rawFutOi ? Math.floor(parseFloat(rawFutOi)) : 0;
+    const futuresOI = {
+        symbol: futSymbol,
+        oiLatest: futOi,
+        oiDelta: 0,
+        oiBuy: 0,
+        oiSell: 0,
+        oiHigh: futOi,
+        oiLow: futOi
+    };
     // Create session record in DB
-    let doc;
-    try {
-        doc = await Module2Session_1.Module2Session.create({
-            user_id: userId,
-            session_type: sessionType,
-            index_symbol: indexSymbol,
-            expiry_date: expiryDate,
-            selected_strikes_json: selectedStrikes,
-            day_open_prices_json: dayOpenPrices
-        });
-    }
-    catch (err) {
-        console.warn("[TrackerEngine] MongoDB offline. Creating temporary mock session in memory.");
-        doc = {
-            _id: "mock_session_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
-            user_id: userId,
-            session_type: sessionType,
-            index_symbol: indexSymbol,
-            expiry_date: expiryDate,
-            selected_strikes_json: selectedStrikes,
-            day_open_prices_json: dayOpenPrices,
-            created_at: new Date()
-        };
-    }
+    const doc = await Module2Session_1.Module2Session.create({
+        user_id: userId,
+        session_type: sessionType,
+        index_symbol: indexSymbol,
+        expiry_date: expiryDate,
+        selected_strikes_json: selectedStrikes,
+        day_open_prices_json: dayOpenPrices,
+        futures_oi_json: futuresOI
+    });
     const sessionData = {
         sessionId: doc._id.toString(),
         userId,
+        dataSource: (0, module2InteractiveDataService_1.getModule2DataSource)(),
         sessionType,
         indexSymbol,
         expiryDate,
         selectedStrikes,
         dayOpenPrices,
         strikes,
-        createdAt: doc.created_at
+        createdAt: doc.created_at,
+        futuresOI
     };
     // Add to local active sessions cache
     exports.activeSessions[doc._id.toString()] = sessionData;
@@ -282,6 +426,8 @@ const updateTrackerStrikes = async (sessionId, newStrikes) => {
         if (!session.selectedStrikes.includes(strike)) {
             const rawPrice = await redis_1.default.get(`ltp:${strike}`);
             const ltp = rawPrice ? Math.floor(parseFloat(rawPrice)) : 0; // Capture baseline at first observation
+            const rawOi = await redis_1.default.get(`oi:${strike}`);
+            const oi = rawOi ? Math.floor(parseFloat(rawOi)) : 0;
             session.dayOpenPrices[strike] = ltp;
             session.strikes[strike] = {
                 strike,
@@ -292,23 +438,25 @@ const updateTrackerStrikes = async (sessionId, newStrikes) => {
                 trendBadge: "FLAT",
                 isDowntrendActive: false,
                 isDeepLoss: false,
-                pctChange: 0
+                pctChange: 0,
+                oiLatest: oi,
+                oiBuyLatest: 0,
+                oiSellLatest: 0,
+                oiHigh: oi,
+                oiLow: oi,
+                oiMean: oi,
+                _oiRunningSum: oi,
+                _oiRowCount: 1
             };
         }
     }
-    // Remove retired strikes from the active selection (but we can keep memory cache history if needed,
-    // or clean it up. Keeping it in Mongoose is fine since they are written to DB).
+    // Remove retired strikes from the active selection
     session.selectedStrikes = newStrikes;
     // Update Database session configuration
-    try {
-        await Module2Session_1.Module2Session.findByIdAndUpdate(sessionId, {
-            selected_strikes_json: newStrikes,
-            day_open_prices_json: session.dayOpenPrices
-        });
-    }
-    catch (err) {
-        console.warn("[TrackerEngine] DB offline during updateTrackerStrikes. Continuing in-memory.");
-    }
+    await Module2Session_1.Module2Session.findByIdAndUpdate(sessionId, {
+        selected_strikes_json: newStrikes,
+        day_open_prices_json: session.dayOpenPrices
+    });
     return session;
 };
 exports.updateTrackerStrikes = updateTrackerStrikes;
@@ -316,17 +464,7 @@ exports.updateTrackerStrikes = updateTrackerStrikes;
  * Resumes an active session from the database (e.g. on server restart)
  */
 const resumeSession = async (sessionId) => {
-    if (sessionId.startsWith("mock_session_")) {
-        return exports.activeSessions[sessionId] || null;
-    }
-    let doc = null;
-    try {
-        doc = await Module2Session_1.Module2Session.findById(sessionId);
-    }
-    catch (err) {
-        console.warn(`[TrackerEngine] DB offline. Failed to resume session ${sessionId}.`);
-        return exports.activeSessions[sessionId] || null;
-    }
+    const doc = await Module2Session_1.Module2Session.findById(sessionId);
     if (!doc)
         return null;
     const strikes = {};
@@ -343,7 +481,11 @@ const resumeSession = async (sessionId) => {
                 minute: "2-digit"
             }),
             isHigh: t.is_day_high,
-            isLow: t.is_day_low
+            isLow: t.is_day_low,
+            oi: t.oi || 0,
+            oiDelta: t.oi_delta || 0,
+            oiBuy: t.oi_buy || 0,
+            oiSell: t.oi_sell || 0
         }));
         const ltp = grid.length > 0 ? grid[grid.length - 1].ltp : (dayOpenPrices[strike] || 100);
         const dayHigh = ticks.reduce((max, t) => Math.max(max, t.ltp_integer), dayOpenPrices[strike] || 100);
@@ -366,6 +508,20 @@ const resumeSession = async (sessionId) => {
             else if (up >= 4)
                 trendBadge = "L_TO_H";
         }
+        const oiLatest = grid.length > 0 ? grid[grid.length - 1].oi : 0;
+        const oiBuyLatest = grid.length > 0 ? grid[grid.length - 1].oiBuy : 0;
+        const oiSellLatest = grid.length > 0 ? grid[grid.length - 1].oiSell : 0;
+        const oiHigh = ticks.reduce((max, t) => Math.max(max, t.oi || 0), 0);
+        const oiLow = ticks.reduce((min, t) => {
+            const val = t.oi || 0;
+            if (val === 0)
+                return min;
+            return min === 0 ? val : Math.min(min, val);
+        }, 0);
+        // Reconstruct running sum for mean calculation
+        const oiRunningSum = ticks.reduce((sum, t) => sum + (t.oi || 0), 0);
+        const oiRowCount = ticks.length;
+        const oiMean = oiRowCount > 0 ? Math.round(oiRunningSum / oiRowCount) : oiLatest;
         strikes[strike] = {
             strike,
             dayOpen: dayOpenPrices[strike] || 100,
@@ -375,19 +531,39 @@ const resumeSession = async (sessionId) => {
             trendBadge,
             isDowntrendActive,
             isDeepLoss,
-            pctChange: Number((((ltp - (dayOpenPrices[strike] || 100)) / (dayOpenPrices[strike] || 100)) * 100).toFixed(2))
+            pctChange: Number((((ltp - (dayOpenPrices[strike] || 100)) / (dayOpenPrices[strike] || 100)) * 100).toFixed(2)),
+            oiLatest,
+            oiBuyLatest,
+            oiSellLatest,
+            oiHigh: oiHigh || oiLatest,
+            oiLow: oiLow || oiLatest,
+            oiMean,
+            _oiRunningSum: oiRunningSum,
+            _oiRowCount: oiRowCount
         };
     }
+    // Restore futures details
+    const futuresOI = doc.futures_oi_json || {
+        symbol: getFuturesSymbol(doc.index_symbol),
+        oiLatest: 0,
+        oiDelta: 0,
+        oiBuy: 0,
+        oiSell: 0,
+        oiHigh: 0,
+        oiLow: 0
+    };
     const sessionData = {
         sessionId: doc._id.toString(),
         userId: doc.user_id.toString(),
+        dataSource: (0, module2InteractiveDataService_1.getModule2DataSource)(),
         sessionType: doc.session_type,
         indexSymbol: doc.index_symbol,
         expiryDate: doc.expiry_date,
         selectedStrikes: doc.selected_strikes_json,
         dayOpenPrices,
         strikes,
-        createdAt: doc.created_at
+        createdAt: doc.created_at,
+        futuresOI
     };
     exports.activeSessions[sessionId] = sessionData;
     return sessionData;

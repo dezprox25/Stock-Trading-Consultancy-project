@@ -39,6 +39,22 @@ exports.Module2StrikeTickSchema = new mongoose_1.Schema({
         type: Boolean,
         default: false,
     },
+    oi: {
+        type: Number,
+        default: 0,
+    },
+    oi_delta: {
+        type: Number,
+        default: 0,
+    },
+    oi_buy: {
+        type: Number,
+        default: 0,
+    },
+    oi_sell: {
+        type: Number,
+        default: 0,
+    },
 });
 // Compound Index to retrieve session ticks quickly ordered by time
 exports.Module2StrikeTickSchema.index({ session_id: 1, strike: 1, minute_timestamp: -1 });

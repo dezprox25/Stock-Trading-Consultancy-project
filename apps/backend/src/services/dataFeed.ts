@@ -1,13 +1,13 @@
-import WebSocket from "ws";
 import redis from "../config/redis";
 import { aggregateOHLC } from "./ohlcAggregator";
 import { Tick } from "@stock/shared";
+import { ingestModule1OiTick, setModule1OiDataSource } from "./module1OiService";
+import { getZebuMissingConfig, isZebuMarketDataConfigured, startZebuMarketDataFeed } from "./zebuMarketDataClient";
 
-const CLIENT_API_URL = process.env.CLIENT_API_URL || "ws://127.0.0.1:5000/mock-feed";
-let ws: WebSocket | null = null;
 let reconnectTimeout: NodeJS.Timeout | null = null;
 let mockInterval: NodeJS.Timeout | null = null;
 let isMockActive = false;
+let zebuClient: { close: () => void } | null = null;
 
 // Callbacks for broadcasting ticks and updates to client connections
 type TickCallback = (tick: Tick) => void;
@@ -21,123 +21,32 @@ export const setOnTickReceived = (callback: TickCallback) => {
  * Initializes the data feed connection
  */
 export const initDataFeed = () => {
-  if (process.env.NODE_ENV === "development" || !process.env.CLIENT_API_URL) {
-    console.log("[DataFeed] Running in development mode or CLIENT_API_URL missing. Starting internal market simulator...");
-    startMockGenerator();
+  if (isZebuMarketDataConfigured()) {
+    console.log("[DataFeed] Using LIVE MARKET DATA API");
+    connectToZebuMarketData();
   } else {
-    console.log("[DataFeed] Connecting to external client feed...");
-    connectToClientAPI();
+    console.log("[DataFeed] Using INTERNAL SIMULATOR");
+    console.log(`[Module1/Zebu] Falling back to simulator: missing ${getZebuMissingConfig().join(", ")}`);
+    startMockGenerator();
   }
 };
 
 /**
- * Connects to the external Client API WebSocket stream
+ * Connects to the Zebu MYNT / Zebu Trade market data stream.
  */
-const connectToClientAPI = () => {
+const connectToZebuMarketData = () => {
   if (reconnectTimeout) clearTimeout(reconnectTimeout);
 
-  let urlString = CLIENT_API_URL;
-  try {
-    const urlObj = new URL(CLIENT_API_URL);
-    if (process.env.MOD1_API_KEY) {
-      urlObj.searchParams.set("mod1_api_key", process.env.MOD1_API_KEY);
-      urlObj.searchParams.set("apiKey", process.env.MOD1_API_KEY);
-      urlObj.searchParams.set("api_key", process.env.MOD1_API_KEY);
-      urlObj.searchParams.set("key", process.env.MOD1_API_KEY);
-    }
-    if (process.env.MOD1_API_SECRET) {
-      urlObj.searchParams.set("mod1_api_secret", process.env.MOD1_API_SECRET);
-      urlObj.searchParams.set("apiSecret", process.env.MOD1_API_SECRET);
-      urlObj.searchParams.set("api_secret", process.env.MOD1_API_SECRET);
-      urlObj.searchParams.set("secret", process.env.MOD1_API_SECRET);
-    }
-    if (process.env.MOD2_API_KEY) {
-      urlObj.searchParams.set("mod2_api_key", process.env.MOD2_API_KEY);
-      urlObj.searchParams.set("mod2Key", process.env.MOD2_API_KEY);
-      urlObj.searchParams.set("mod2_key", process.env.MOD2_API_KEY);
-    }
-    if (process.env.MOD2_API_SECRET) {
-      urlObj.searchParams.set("mod2_api_secret", process.env.MOD2_API_SECRET);
-      urlObj.searchParams.set("mod2Secret", process.env.MOD2_API_SECRET);
-      urlObj.searchParams.set("mod2_secret", process.env.MOD2_API_SECRET);
-    }
-    urlString = urlObj.toString();
-  } catch (e) {
-    // Fallback if CLIENT_API_URL is not a standard URL
-  }
-
-  console.log(`[DataFeed] Connecting to external client feed at: ${CLIENT_API_URL}`);
-  
-  const headers: Record<string, string> = {};
-  if (process.env.MOD1_API_KEY) {
-    headers["x-api-key"] = process.env.MOD1_API_KEY;
-    headers["x-mod1-api-key"] = process.env.MOD1_API_KEY;
-  }
-  if (process.env.MOD1_API_SECRET) {
-    headers["x-api-secret"] = process.env.MOD1_API_SECRET;
-    headers["x-mod1-api-secret"] = process.env.MOD1_API_SECRET;
-  }
-  if (process.env.MOD2_API_KEY) {
-    headers["x-mod2-api-key"] = process.env.MOD2_API_KEY;
-  }
-  if (process.env.MOD2_API_SECRET) {
-    headers["x-mod2-api-secret"] = process.env.MOD2_API_SECRET;
-  }
-
-  ws = new WebSocket(urlString, { headers });
-
-  ws.on("open", () => {
-    console.log("[DataFeed] Connected to client data feed successfully.");
-    // Deactivate simulator since external feed is connected
-    stopMockGenerator();
-    
-    // Also send credentials as a JSON message on connect just in case
-    try {
-      const authMessage = JSON.stringify({
-        type: "auth",
-        action: "auth",
-        apiKey: process.env.MOD1_API_KEY,
-        apiSecret: process.env.MOD1_API_SECRET,
-        mod1_api_key: process.env.MOD1_API_KEY,
-        mod1_api_secret: process.env.MOD1_API_SECRET,
-        mod2_api_key: process.env.MOD2_API_KEY,
-        mod2_api_secret: process.env.MOD2_API_SECRET,
-      });
-      ws?.send(authMessage);
-    } catch (sendErr) {
-      console.warn("[DataFeed] Failed to send initial auth message:", sendErr);
-    }
-  });
-
-  ws.on("message", async (raw: string) => {
-    try {
-      const tickData = JSON.parse(raw);
-      
-      // Normalize raw tick data
-      const tick: Tick = {
-        symbol: tickData.symbol,
-        ltp: Number(tickData.ltp),
-        timestamp: tickData.timestamp ? new Date(tickData.timestamp) : new Date(),
-        volume: tickData.volume ? Number(tickData.volume) : 0,
-        oi: tickData.oi !== undefined ? Number(tickData.oi) : undefined,
-      };
-
-      await processIncomingTick(tick);
-    } catch (err) {
-      console.error("[DataFeed] Error parsing stream tick:", err);
-    }
-  });
-
-  ws.on("close", () => {
-    console.log("[DataFeed] Connection closed. Attempting reconnect in 3 seconds. Starting internal market simulator as backup...");
-    startMockGenerator();
-    reconnectTimeout = setTimeout(connectToClientAPI, 3000);
-  });
-
-  ws.on("error", (error) => {
-    console.error("[DataFeed] WebSocket client error:", error);
-    ws?.close();
-  });
+  zebuClient = startZebuMarketDataFeed(
+    processIncomingTick,
+    setModule1OiDataSource,
+    (reason) => {
+      console.log(`[Module1/Zebu] Falling back to simulator: ${reason}`);
+      zebuClient = null;
+      startMockGenerator();
+      reconnectTimeout = setTimeout(connectToZebuMarketData, 3000);
+    },
+  );
 };
 
 /**
@@ -153,6 +62,8 @@ export const processIncomingTick = async (tick: Tick) => {
   if (oi !== undefined) {
     await redis.set(`oi:${symbol}`, oi.toString());
   }
+
+  ingestModule1OiTick(tick);
 
   // 3. Aggregate OHLC candles for Futures contract (only futures feed pivot levels)
   if (symbol.endsWith("-FUT") || symbol.includes("FUT")) {
@@ -199,6 +110,7 @@ const stopMockGenerator = () => {
 const startMockGenerator = () => {
   if (isMockActive) return;
   isMockActive = true;
+  setModule1OiDataSource("SIMULATOR");
   console.log("[DataFeed] Activated market simulator. Publishing ticks with OI data every 1000ms.");
 
   let spotPrice = 22100.0;

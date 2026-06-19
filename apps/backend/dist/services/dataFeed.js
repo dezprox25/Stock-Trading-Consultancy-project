@@ -4,14 +4,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.processIncomingTick = exports.initDataFeed = exports.setOnTickReceived = void 0;
-const ws_1 = __importDefault(require("ws"));
 const redis_1 = __importDefault(require("../config/redis"));
 const ohlcAggregator_1 = require("./ohlcAggregator");
-const CLIENT_API_URL = process.env.CLIENT_API_URL || "ws://127.0.0.1:5000/mock-feed";
-let ws = null;
+const module1OiService_1 = require("./module1OiService");
+const zebuMarketDataClient_1 = require("./zebuMarketDataClient");
 let reconnectTimeout = null;
 let mockInterval = null;
 let isMockActive = false;
+let zebuClient = null;
 let onTickReceived = null;
 const setOnTickReceived = (callback) => {
     onTickReceived = callback;
@@ -21,64 +21,43 @@ exports.setOnTickReceived = setOnTickReceived;
  * Initializes the data feed connection
  */
 const initDataFeed = () => {
-    if (process.env.NODE_ENV === "development" || !process.env.CLIENT_API_URL) {
-        console.log("[DataFeed] Running in development mode. Starting internal market simulator...");
-        startMockGenerator();
+    if ((0, zebuMarketDataClient_1.isZebuMarketDataConfigured)()) {
+        console.log("[DataFeed] Using LIVE MARKET DATA API");
+        connectToZebuMarketData();
     }
     else {
-        connectToClientAPI();
+        console.log("[DataFeed] Using INTERNAL SIMULATOR");
+        console.log(`[Module1/Zebu] Falling back to simulator: missing ${(0, zebuMarketDataClient_1.getZebuMissingConfig)().join(", ")}`);
+        startMockGenerator();
     }
 };
 exports.initDataFeed = initDataFeed;
 /**
- * Connects to the external Client API WebSocket stream
+ * Connects to the Zebu MYNT / Zebu Trade market data stream.
  */
-const connectToClientAPI = () => {
+const connectToZebuMarketData = () => {
     if (reconnectTimeout)
         clearTimeout(reconnectTimeout);
-    console.log(`[DataFeed] Connecting to external client feed at: ${CLIENT_API_URL}`);
-    ws = new ws_1.default(CLIENT_API_URL);
-    ws.on("open", () => {
-        console.log("[DataFeed] Connected to client data feed successfully.");
-        // If mock was running, disable it
-        stopMockGenerator();
-    });
-    ws.on("message", async (raw) => {
-        try {
-            const tickData = JSON.parse(raw);
-            // Normalize raw tick data
-            const tick = {
-                symbol: tickData.symbol,
-                ltp: Number(tickData.ltp),
-                timestamp: tickData.timestamp ? new Date(tickData.timestamp) : new Date(),
-                volume: tickData.volume ? Number(tickData.volume) : 0,
-            };
-            await (0, exports.processIncomingTick)(tick);
-        }
-        catch (err) {
-            console.error("[DataFeed] Error parsing stream tick:", err);
-        }
-    });
-    ws.on("close", () => {
-        console.log("[DataFeed] Connection closed. Attempting reconnect in 3 seconds...");
-        // If connection drops, start mock generator in background so app remains active,
-        // and schedule reconnect.
+    zebuClient = (0, zebuMarketDataClient_1.startZebuMarketDataFeed)(exports.processIncomingTick, module1OiService_1.setModule1OiDataSource, (reason) => {
+        console.log(`[Module1/Zebu] Falling back to simulator: ${reason}`);
+        zebuClient = null;
         startMockGenerator();
-        reconnectTimeout = setTimeout(connectToClientAPI, 3000);
-    });
-    ws.on("error", (error) => {
-        console.error("[DataFeed] WebSocket client error:", error);
-        ws?.close();
+        reconnectTimeout = setTimeout(connectToZebuMarketData, 3000);
     });
 };
 /**
  * Handles caching and candle aggregation for each tick
  */
 const processIncomingTick = async (tick) => {
-    const { symbol, ltp } = tick;
+    const { symbol, ltp, oi } = tick;
     // 1. Cache latest price in Redis
     await redis_1.default.set(`ltp:${symbol}`, ltp.toString());
-    // 2. Aggregate OHLC candles for Futures contract (only futures feed pivot levels)
+    // 2. Cache latest open interest in Redis if present
+    if (oi !== undefined) {
+        await redis_1.default.set(`oi:${symbol}`, oi.toString());
+    }
+    (0, module1OiService_1.ingestModule1OiTick)(tick);
+    // 3. Aggregate OHLC candles for Futures contract (only futures feed pivot levels)
     if (symbol.endsWith("-FUT") || symbol.includes("FUT")) {
         await (0, ohlcAggregator_1.aggregateOHLC)(tick, 1, "1m");
         await (0, ohlcAggregator_1.aggregateOHLC)(tick, 3, "3m");
@@ -97,7 +76,7 @@ const processIncomingTick = async (tick) => {
             // ignore Redis read errors in offline mode
         }
     }
-    // 3. Forward tick to live websocket broadcaster callback
+    // 4. Forward tick to live websocket broadcaster callback
     if (onTickReceived) {
         onTickReceived(tick);
     }
@@ -109,21 +88,24 @@ exports.processIncomingTick = processIncomingTick;
 const stopMockGenerator = () => {
     if (isMockActive && mockInterval) {
         clearInterval(mockInterval);
+        mockInterval = null;
         isMockActive = false;
         console.log("[DataFeed] Deactivated market simulator.");
     }
 };
 /**
  * Simulator generator for development testing
- * Simulates active NIFTY Spot, Futures and standard options strikes
+ * Simulates active Spot, Futures, and standard options strikes with Open Interest (OI)
  */
 const startMockGenerator = () => {
     if (isMockActive)
         return;
     isMockActive = true;
-    console.log("[DataFeed] Activated market simulator. Publishing ticks every 1000ms.");
+    (0, module1OiService_1.setModule1OiDataSource)("SIMULATOR");
+    console.log("[DataFeed] Activated market simulator. Publishing ticks with OI data every 1000ms.");
     let spotPrice = 22100.0;
     let futPrice = 22135.0;
+    let futOI = 12000000;
     // Option strike baselines
     const strikes = [];
     const startStrike = 21700;
@@ -132,19 +114,24 @@ const startMockGenerator = () => {
     for (let s = startStrike; s <= endStrike; s += step) {
         const ceOffset = (22100 - s) * 0.8;
         const ceBase = Math.max(5, 85 + ceOffset);
+        const ceBaseOI = Math.max(20000, 1000000 - ceOffset * 2000);
         const peOffset = (s - 22100) * 0.8;
         const peBase = Math.max(5, 85 + peOffset);
-        strikes.push({ symbol: `NIFTY${s}CE`, base: ceBase });
-        strikes.push({ symbol: `NIFTY${s}PE`, base: peBase });
+        const peBaseOI = Math.max(20000, 1000000 - peOffset * 2000);
+        strikes.push({ symbol: `NIFTY${s}CE`, base: ceBase, baseOI: ceBaseOI });
+        strikes.push({ symbol: `NIFTY${s}PE`, base: peBase, baseOI: peBaseOI });
     }
     mockInterval = setInterval(async () => {
         const timestamp = new Date();
         // Simulate Spot drift
         const spotChange = (Math.random() - 0.5) * 5;
         spotPrice = Number((spotPrice + spotChange).toFixed(2));
-        // Simulate Futures with drift (occasionally spike divergence above 0.5% for alerts)
+        // Simulate Futures with drift
         const divergenceSpike = Math.random() > 0.95 ? 120.0 : 0.0;
         futPrice = Number((spotPrice + 35 + (Math.random() - 0.5) * 2 + divergenceSpike).toFixed(2));
+        // Simulate Futures OI drift
+        const futOiChange = Math.round((Math.random() - 0.5) * 30000);
+        futOI = Math.max(5000000, futOI + futOiChange);
         // 1. Publish Spot Tick
         await (0, exports.processIncomingTick)({
             symbol: "NIFTY-SPOT",
@@ -157,19 +144,26 @@ const startMockGenerator = () => {
             symbol: "NIFTY-FUT",
             ltp: futPrice,
             timestamp,
-            volume: Math.floor(Math.random() * 500)
+            volume: Math.floor(Math.random() * 500),
+            oi: futOI
         });
         // 3. Publish Strike Ticks
         for (const strike of strikes) {
             // Premium fluctuates relative to Spot
             const drift = (Math.random() - 0.5) * 2;
-            const spotOffset = (spotPrice - 22100.0) * (strike.symbol.endsWith("CE") ? 0.5 : -0.5);
+            const optionType = strike.symbol.endsWith("CE") ? "CE" : "PE";
+            const spotOffset = (spotPrice - 22100.0) * (optionType === "CE" ? 0.5 : -0.5);
             const ltp = Math.max(1, Number((strike.base + spotOffset + drift).toFixed(2)));
+            // Simulate option OI: moves dynamically with spot offsets
+            const oiDrift = (Math.random() - 0.5) * 8000;
+            const oiOffset = spotOffset * 3000;
+            const oi = Math.max(10000, Math.round(strike.baseOI + oiOffset + oiDrift));
             await (0, exports.processIncomingTick)({
                 symbol: strike.symbol,
                 ltp,
                 timestamp,
-                volume: Math.floor(Math.random() * 100)
+                volume: Math.floor(Math.random() * 100),
+                oi
             });
         }
     }, 1000);

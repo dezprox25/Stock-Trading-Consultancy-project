@@ -14,7 +14,16 @@ const authenticate = async (req, res, next) => {
         }
         const token = authHeader.split(" ")[1];
         // Check if token is blacklisted in Redis (logged-out tokens)
-        const isBlacklisted = await redis_1.default.get(`blacklist:${token}`);
+        let isBlacklisted = null;
+        try {
+            isBlacklisted = await redis_1.default.get(`blacklist:${token}`);
+        }
+        catch (err) {
+            if (process.env.NODE_ENV === "production") {
+                throw err;
+            }
+            console.warn("[Auth Middleware] Failed to check token blacklist in Redis (Redis may be offline). Proceeding without blacklist check.");
+        }
         if (isBlacklisted) {
             return res
                 .status(401)

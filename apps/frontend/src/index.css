@@ -26,30 +26,6 @@
   --sidebar-muted: #a7b4c8;
 }
 
-.dark {
-  --trading-bg: #0f172a;
-  --trading-surface: #172033;
-  --trading-border: #2b3a55;
-  --trading-grid-line: #24324a;
-
-  --trading-text-muted: #a7b4c8;
-  --trading-text-active: #f8fafc;
-
-  --trading-bullish: #22c55e;
-  --trading-bearish: #f87171;
-  --trading-neutral: #10b981;
-
-  --trading-divergence: #fb923c;
-  --trading-sentiment: #a78bfa;
-  --trading-day-high: #60a5fa;
-  --trading-day-low: #94a3b8;
-
-  --sidebar-bg: #020617;
-  --sidebar-surface: #0f172a;
-  --sidebar-text: #f8fafc;
-  --sidebar-muted: #94a3b8;
-}
-
 * {
   box-sizing: border-box;
 }
@@ -291,12 +267,6 @@ textarea {
   background: rgba(4, 120, 87, 0.08);
   color: var(--trading-neutral);
   border-color: rgba(4, 120, 87, 0.35);
-}
-
-.dark .sidebar-toggle-btn:hover {
-  background: rgba(16, 185, 129, 0.15);
-  color: var(--trading-neutral);
-  border-color: rgba(16, 185, 129, 0.4);
 }
 
 /* Collapsible Split View Layout System */

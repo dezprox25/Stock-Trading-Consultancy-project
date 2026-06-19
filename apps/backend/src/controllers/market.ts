@@ -6,6 +6,7 @@ import redis from "../config/redis";
 import { WatchlistSchema, Module1ConfigSchema } from "@stock/shared";
 import { getActiveCandle } from "../services/ohlcAggregator";
 import { getPivotLevels, evaluateIndicators } from "../services/pivotService";
+import { getLatestModule1OiMetrics } from "../services/module1OiService";
 
 // Local in-memory watchlists store for when MongoDB is offline
 const inMemoryWatchlists = new Map<string, { symbols: string[]; columnPrefs: any }>();
@@ -207,6 +208,15 @@ export const getIndicatorsEndpoint = async (req: AuthenticatedRequest, res: Resp
   }
 };
 
+export const getModule1LatestOi = async (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    return res.status(200).json(getLatestModule1OiMetrics());
+  } catch (error) {
+    console.error("Get Module1 Latest OI Error:", error);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
 // Generate options chain based on current NIFTY spot index
 export const getOptionChain = async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -276,4 +286,3 @@ export const updateCustomTimeframe = async (req: AuthenticatedRequest, res: Resp
     return res.status(500).json({ error: "Internal Server Error" });
   }
 };
-

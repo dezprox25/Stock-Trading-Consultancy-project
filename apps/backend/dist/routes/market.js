@@ -16,4 +16,5 @@ router.get("/market/option-chain/:index", auth_1.authenticate, market_1.getOptio
 router.post("/market/custom-timeframe", auth_1.authenticate, market_1.updateCustomTimeframe);
 // Module 1 Indicators
 router.get("/module1/indicators/:symbol", auth_1.authenticate, market_1.getIndicatorsEndpoint);
+router.get("/module1/latest-oi", market_1.getModule1LatestOi);
 exports.default = router;

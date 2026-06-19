@@ -128,6 +128,11 @@ const refresh = async (req, res) => {
         const newAccessToken = (0, token_1.generateAccessToken)(user._id.toString());
         return res.status(200).json({
             accessToken: newAccessToken,
+            user: {
+                id: user._id,
+                username: user.username,
+                name: user.name || user.username,
+            },
         });
     }
     catch (error) {
