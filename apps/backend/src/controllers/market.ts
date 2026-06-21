@@ -4,9 +4,10 @@ import { Watchlist } from "../models/Watchlist";
 import { FuturesOHLC } from "../models/FuturesOHLC";
 import redis from "../config/redis";
 import { WatchlistSchema, Module1ConfigSchema } from "@stock/shared";
-import { getActiveCandle } from "../services/ohlcAggregator";
+import { getActiveCandle, getCachedOHLCBars } from "../services/ohlcAggregator";
 import { getPivotLevels, evaluateIndicators } from "../services/pivotService";
 import { getLatestModule1OiMetrics } from "../services/module1OiService";
+import { isZebuLiveConnected } from "../services/zebuMarketDataClient";
 
 // Local in-memory watchlists store for when MongoDB is offline
 const inMemoryWatchlists = new Map<string, { symbols: string[]; columnPrefs: any }>();
@@ -140,10 +141,10 @@ export const getFuturesData = async (req: AuthenticatedRequest, res: Response) =
 
 // Get completed OHLC candles from Database
 export const getOHLCBars = async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { symbol, tf } = req.params;
-    const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+  const { symbol, tf } = req.params;
+  const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
 
+  try {
     const dbBars = await FuturesOHLC.find({ symbol, timeframe: tf })
       .sort({ bar_time: -1 })
       .limit(limit);
@@ -161,8 +162,9 @@ export const getOHLCBars = async (req: AuthenticatedRequest, res: Response) => {
 
     return res.status(200).json(bars);
   } catch (error) {
-    console.error("Get OHLC Bars Error:", error);
-    return res.status(500).json({ error: "Internal Server Error" });
+    console.error("Get OHLC Bars Error, falling back to memory cache:", error);
+    const cachedBars = getCachedOHLCBars(symbol, tf, limit);
+    return res.status(200).json(cachedBars);
   }
 };
 
@@ -286,3 +288,51 @@ export const updateCustomTimeframe = async (req: AuthenticatedRequest, res: Resp
     return res.status(500).json({ error: "Internal Server Error" });
   }
 };
+
+/**
+ * Helper to check if the current time falls within Indian Standard Time (IST) market hours:
+ * Monday to Friday, 9:00 AM to 3:45 PM IST.
+ */
+export const isMarketOpenTime = (now = new Date()): boolean => {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata",
+    hour12: false,
+    weekday: "long",
+    hour: "numeric",
+    minute: "numeric",
+  });
+  
+  const parts = formatter.formatToParts(now);
+  const partMap: Record<string, string> = {};
+  for (const part of parts) {
+    partMap[part.type] = part.value;
+  }
+  
+  const weekday = partMap.weekday;
+  const hour = parseInt(partMap.hour, 10);
+  const minute = parseInt(partMap.minute, 10);
+  
+  if (weekday === "Saturday" || weekday === "Sunday") {
+    return false;
+  }
+  
+  const minutesSinceMidnight = hour * 60 + minute;
+  const marketOpenMinutes = 9 * 60; // 9:00 AM
+  const marketCloseMinutes = 15 * 60 + 45; // 3:45 PM
+  
+  return minutesSinceMidnight >= marketOpenMinutes && minutesSinceMidnight <= marketCloseMinutes;
+};
+
+// Get current live market connection status
+export const getMarketStatus = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const isLive = isMarketOpenTime() && isZebuLiveConnected();
+    return res.status(200).json({
+      status: isLive ? "LIVE" : "CLOSED"
+    });
+  } catch (error) {
+    console.error("Get Market Status Error:", error);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+

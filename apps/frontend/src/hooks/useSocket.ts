@@ -41,6 +41,7 @@ export const useSocket = () => {
       
       // Sync active rooms on connection
       socket.emit("join:symbol", selectedSymbol);
+      socket.emit("join:symbol", "NIFTY-SPOT");
       socket.emit("join:indicators", {
         symbol: selectedSymbol,
         timeframe: selectedTimeframe,
@@ -95,6 +96,7 @@ export const useSocket = () => {
 
     // Join new symbol ticks
     socket.emit("join:symbol", selectedSymbol);
+    socket.emit("join:symbol", "NIFTY-SPOT");
 
     // Join new indicators room
     socket.emit("join:indicators", {
@@ -105,6 +107,7 @@ export const useSocket = () => {
 
     return () => {
       socket.emit("leave:symbol", selectedSymbol);
+      socket.emit("leave:symbol", "NIFTY-SPOT");
       socket.emit("leave:indicators", {
         symbol: selectedSymbol,
         timeframe: selectedTimeframe,

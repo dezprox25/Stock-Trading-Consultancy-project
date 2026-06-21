@@ -1,9 +1,59 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getActiveCandle = exports.aggregateOHLC = exports.getBoundaryTime = exports.setOnCandleFinalized = void 0;
+exports.getActiveCandle = exports.getCachedOHLCBars = exports.aggregateOHLC = exports.getBoundaryTime = exports.setOnCandleFinalized = void 0;
 const FuturesOHLC_1 = require("../models/FuturesOHLC");
+const redis_1 = __importDefault(require("../config/redis"));
 // Local cache for active candles: activeCandles[symbol][timeframe]
 const activeCandles = {};
+const getTimeframeMinutes = async (tfStr) => {
+    if (tfStr === "1m")
+        return 1;
+    if (tfStr === "3m")
+        return 3;
+    if (tfStr === "5m")
+        return 5;
+    if (tfStr === "custom") {
+        try {
+            const customTf = await redis_1.default.get("config:custom_timeframe");
+            if (customTf && customTf.endsWith("m")) {
+                const mins = parseInt(customTf);
+                if (mins > 0)
+                    return mins;
+            }
+        }
+        catch {
+            // Ignore Redis offline/read errors
+        }
+        return 10; // Default fallback for custom
+    }
+    const mins = parseInt(tfStr);
+    return isNaN(mins) || mins <= 0 ? 5 : mins;
+};
+// Start a proactive checker loop on startup/module load
+const startBoundaryChecker = () => {
+    setInterval(async () => {
+        const now = Date.now();
+        for (const symbol of Object.keys(activeCandles)) {
+            for (const tfStr of Object.keys(activeCandles[symbol])) {
+                const candle = activeCandles[symbol][tfStr];
+                if (!candle)
+                    continue;
+                const tfMins = await getTimeframeMinutes(tfStr);
+                const nextBoundary = candle.openTime + tfMins * 60000;
+                if (now >= nextBoundary) {
+                    console.log(`[OHLC] Proactive finalization for ${symbol} (${tfStr}) on boundary.`);
+                    const candleToFinalize = candle;
+                    delete activeCandles[symbol][tfStr];
+                    await finaliseCandle(candleToFinalize);
+                }
+            }
+        }
+    }, 1000);
+};
+startBoundaryChecker();
 let onCandleFinalized = null;
 const setOnCandleFinalized = (callback) => {
     onCandleFinalized = callback;
@@ -56,10 +106,20 @@ const aggregateOHLC = async (tick, timeframeMinutes, timeframeStr) => {
     return candle;
 };
 exports.aggregateOHLC = aggregateOHLC;
+const finalizedCandlesCache = {};
 /**
  * Saves finalized candle to MongoDB and triggers callback
  */
 const finaliseCandle = async (candle) => {
+    const { symbol, timeframe } = candle;
+    if (!finalizedCandlesCache[symbol])
+        finalizedCandlesCache[symbol] = {};
+    if (!finalizedCandlesCache[symbol][timeframe])
+        finalizedCandlesCache[symbol][timeframe] = [];
+    finalizedCandlesCache[symbol][timeframe].push(candle);
+    if (finalizedCandlesCache[symbol][timeframe].length > 100) {
+        finalizedCandlesCache[symbol][timeframe].shift();
+    }
     try {
         await FuturesOHLC_1.FuturesOHLC.create({
             symbol: candle.symbol,
@@ -72,14 +132,28 @@ const finaliseCandle = async (candle) => {
             volume: candle.volume,
         });
         console.log(`[OHLC] Finalized ${candle.timeframe} candle for ${candle.symbol} at ${new Date(candle.openTime).toISOString()}`);
-        if (onCandleFinalized) {
-            await onCandleFinalized(candle);
-        }
     }
     catch (error) {
         console.error("Failed to finalize candle in database:", error);
     }
+    // Trigger callback even if DB save fails
+    if (onCandleFinalized) {
+        try {
+            await onCandleFinalized(candle);
+        }
+        catch (err) {
+            console.error("Error in onCandleFinalized callback:", err);
+        }
+    }
 };
+/**
+ * Returns latest cached completed candles
+ */
+const getCachedOHLCBars = (symbol, timeframe, limit = 50) => {
+    const list = finalizedCandlesCache[symbol]?.[timeframe] || [];
+    return list.slice(-limit);
+};
+exports.getCachedOHLCBars = getCachedOHLCBars;
 /**
  * Gets the current active candle for a symbol and timeframe
  */

@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateCustomTimeframe = exports.getOptionChain = exports.getModule1LatestOi = exports.getIndicatorsEndpoint = exports.getPivotLevelsEndpoint = exports.getOHLCBars = exports.getFuturesData = exports.getSpotPrice = exports.updateWatchlist = exports.getWatchlist = void 0;
+exports.getMarketStatus = exports.isMarketOpenTime = exports.updateCustomTimeframe = exports.getOptionChain = exports.getModule1LatestOi = exports.getIndicatorsEndpoint = exports.getPivotLevelsEndpoint = exports.getOHLCBars = exports.getFuturesData = exports.getSpotPrice = exports.updateWatchlist = exports.getWatchlist = void 0;
 const Watchlist_1 = require("../models/Watchlist");
 const FuturesOHLC_1 = require("../models/FuturesOHLC");
 const redis_1 = __importDefault(require("../config/redis"));
@@ -11,6 +11,7 @@ const shared_1 = require("@stock/shared");
 const ohlcAggregator_1 = require("../services/ohlcAggregator");
 const pivotService_1 = require("../services/pivotService");
 const module1OiService_1 = require("../services/module1OiService");
+const zebuMarketDataClient_1 = require("../services/zebuMarketDataClient");
 // Local in-memory watchlists store for when MongoDB is offline
 const inMemoryWatchlists = new Map();
 // Seed default watchlists for guest users
@@ -131,9 +132,9 @@ const getFuturesData = async (req, res) => {
 exports.getFuturesData = getFuturesData;
 // Get completed OHLC candles from Database
 const getOHLCBars = async (req, res) => {
+    const { symbol, tf } = req.params;
+    const limit = req.query.limit ? parseInt(req.query.limit) : 50;
     try {
-        const { symbol, tf } = req.params;
-        const limit = req.query.limit ? parseInt(req.query.limit) : 50;
         const dbBars = await FuturesOHLC_1.FuturesOHLC.find({ symbol, timeframe: tf })
             .sort({ bar_time: -1 })
             .limit(limit);
@@ -150,8 +151,9 @@ const getOHLCBars = async (req, res) => {
         return res.status(200).json(bars);
     }
     catch (error) {
-        console.error("Get OHLC Bars Error:", error);
-        return res.status(500).json({ error: "Internal Server Error" });
+        console.error("Get OHLC Bars Error, falling back to memory cache:", error);
+        const cachedBars = (0, ohlcAggregator_1.getCachedOHLCBars)(symbol, tf, limit);
+        return res.status(200).json(cachedBars);
     }
 };
 exports.getOHLCBars = getOHLCBars;
@@ -269,3 +271,46 @@ const updateCustomTimeframe = async (req, res) => {
     }
 };
 exports.updateCustomTimeframe = updateCustomTimeframe;
+/**
+ * Helper to check if the current time falls within Indian Standard Time (IST) market hours:
+ * Monday to Friday, 9:00 AM to 3:45 PM IST.
+ */
+const isMarketOpenTime = (now = new Date()) => {
+    const formatter = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Kolkata",
+        hour12: false,
+        weekday: "long",
+        hour: "numeric",
+        minute: "numeric",
+    });
+    const parts = formatter.formatToParts(now);
+    const partMap = {};
+    for (const part of parts) {
+        partMap[part.type] = part.value;
+    }
+    const weekday = partMap.weekday;
+    const hour = parseInt(partMap.hour, 10);
+    const minute = parseInt(partMap.minute, 10);
+    if (weekday === "Saturday" || weekday === "Sunday") {
+        return false;
+    }
+    const minutesSinceMidnight = hour * 60 + minute;
+    const marketOpenMinutes = 9 * 60; // 9:00 AM
+    const marketCloseMinutes = 15 * 60 + 45; // 3:45 PM
+    return minutesSinceMidnight >= marketOpenMinutes && minutesSinceMidnight <= marketCloseMinutes;
+};
+exports.isMarketOpenTime = isMarketOpenTime;
+// Get current live market connection status
+const getMarketStatus = async (req, res) => {
+    try {
+        const isLive = (0, exports.isMarketOpenTime)() && (0, zebuMarketDataClient_1.isZebuLiveConnected)();
+        return res.status(200).json({
+            status: isLive ? "LIVE" : "CLOSED"
+        });
+    }
+    catch (error) {
+        console.error("Get Market Status Error:", error);
+        return res.status(500).json({ error: "Internal Server Error" });
+    }
+};
+exports.getMarketStatus = getMarketStatus;

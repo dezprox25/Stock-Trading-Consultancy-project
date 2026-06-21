@@ -10,7 +10,8 @@ import {
   getIndicatorsEndpoint,
   getModule1LatestOi,
   getOptionChain,
-  updateCustomTimeframe
+  updateCustomTimeframe,
+  getMarketStatus
 } from "../controllers/market";
 
 const router = Router();
@@ -26,6 +27,7 @@ router.get("/market/ohlc/:symbol/:tf", authenticate, getOHLCBars);
 router.get("/market/pivots/:symbol/:tf", authenticate, getPivotLevelsEndpoint);
 router.get("/market/option-chain/:index", authenticate, getOptionChain);
 router.post("/market/custom-timeframe", authenticate, updateCustomTimeframe);
+router.get("/market/status", authenticate, getMarketStatus);
 
 // Module 1 Indicators
 router.get("/module1/indicators/:symbol", authenticate, getIndicatorsEndpoint);

@@ -12,8 +12,11 @@ const getInteractiveAuthUrl = () =>
 export const getModule2MissingInteractiveConfig = () => {
   const missing: string[] = [];
 
-  if (isPlaceholder(process.env.MOD2_API_KEY)) missing.push("MOD2_API_KEY");
-  if (isPlaceholder(process.env.MOD2_API_SECRET)) missing.push("MOD2_API_SECRET");
+  const key = process.env.MOD2_INTERACTIVE_API_KEY || process.env.MOD2_API_KEY;
+  const secret = process.env.MOD2_INTERACTIVE_API_SECRET || process.env.MOD2_API_SECRET;
+
+  if (isPlaceholder(key)) missing.push("MOD2_INTERACTIVE_API_KEY");
+  if (isPlaceholder(secret)) missing.push("MOD2_INTERACTIVE_API_SECRET");
   if (isPlaceholder(getInteractiveBaseUrl())) {
     missing.push("AETRAM_INTERACTIVE_API_BASE_URL or MOD2_INTERACTIVE_API_BASE_URL");
   }

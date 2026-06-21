@@ -210,6 +210,14 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
   const selectedTimeframe = useStore((s) => s.selectedTimeframe);
   const prices = useStore((s) => s.prices);
 
+  const { data: marketStatus } = useQuery<{ status: "LIVE" | "CLOSED" }>({
+    queryKey: ["market-status"],
+    queryFn: () => api.get("/api/market/status"),
+    refetchInterval: 15000,
+  });
+
+  const isClosed = marketStatus?.status === "CLOSED";
+
   const prevFutRef = useRef<number>(0);
   const prevSpotRef = useRef<number>(0);
   const [futFlash, setFutFlash] = useState<"up" | "down" | null>(null);
@@ -247,6 +255,8 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
     queryFn: getModule1LatestMetrics,
     retry: false,
   });
+
+
 
   const tableRows = ohlcBars.map((bar) => {
     const timeLabel = new Date(bar.openTime).toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" });
@@ -494,6 +504,11 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
           border: 1px solid var(--trading-border);
         }
 
+        @keyframes m1-pulse {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.03); opacity: 0.95; }
+        }
+
         @media (max-width: 1180px) {
           .m1-th { font-size: 8px; padding: 4px 2px; }
           .m1-badge { font-size: 8px; padding: 2px 3px; }
@@ -580,285 +595,304 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
             </div>
           )}
 
-          {/* Price cards */}
-          {isSplit ? (
-            <div
-              className="m1-section"
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 12,
-                background: "var(--trading-surface)",
-                border: "1.5px solid var(--trading-border)",
-                borderRadius: 10,
-                padding: "8px 16px",
-                justifyContent: "space-between",
-                alignItems: "center",
-                boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
-              }}
-            >
-              {[
-                { label: "Spot LTP", value: spotLtp, sub: "NIFTY-SPOT", flash: spotFlash },
-                { label: "Futures LTP", value: futLtp, sub: selectedSymbol, flash: futFlash },
-                { label: "Spread", value: Math.abs(spread), sub: spread > 0 ? "Premium" : "Discount", flash: null },
-                ...(latestRow ? [{ label: "Last Close", value: latestRow.close, sub: `${latestRow.time} Close`, flash: null }] : []),
-              ].map((c, idx) => {
-                const flashColor = c.flash === "up" ? GREEN : c.flash === "down" ? RED : "var(--trading-text-active)";
-                return (
-                  <div key={idx} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.02em" }}>{c.label}:</span>
-                    <span style={{ fontSize: 13, fontWeight: 800, color: flashColor, display: "inline-flex", alignItems: "center" }}>
-                      {c.value > 0 ? c.value.toLocaleString("en-IN", { minimumFractionDigits: 1 }) : "—"}
-                      {c.flash && (
-                        <span style={{ fontSize: 10, marginLeft: 2 }}>
-                          {c.flash === "up" ? "▲" : "▼"}
+            <>
+              {/* Price cards */}
+              {isSplit ? (
+                <div
+                  className="m1-section"
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 12,
+                    background: "var(--trading-surface)",
+                    border: "1.5px solid var(--trading-border)",
+                    borderRadius: 10,
+                    padding: "8px 16px",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+                  }}
+                >
+                  {[
+                    { label: "Spot LTP", value: spotLtp, sub: "NIFTY-SPOT", flash: spotFlash },
+                    { label: "Futures LTP", value: futLtp, sub: selectedSymbol, flash: futFlash },
+                    { label: "Spread", value: Math.abs(spread), sub: spread > 0 ? "Premium" : "Discount", flash: null },
+                    ...(latestRow ? [{ label: "Last Close", value: latestRow.close, sub: `${latestRow.time} Close`, flash: null }] : []),
+                  ].map((c, idx) => {
+                    const flashColor = c.flash === "up" ? GREEN : c.flash === "down" ? RED : "var(--trading-text-active)";
+                    return (
+                      <div key={idx} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.02em" }}>{c.label}:</span>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: flashColor, display: "inline-flex", alignItems: "center" }}>
+                          {c.value > 0 ? c.value.toLocaleString("en-IN", { minimumFractionDigits: 1 }) : "—"}
+                          {c.flash && (
+                            <span style={{ fontSize: 10, marginLeft: 2 }}>
+                              {c.flash === "up" ? "▲" : "▼"}
+                            </span>
+                          )}
                         </span>
-                      )}
-                    </span>
-                    <span style={{ fontSize: 9, color: "var(--trading-text-muted)", fontWeight: 500 }}>({c.sub})</span>
+                        <span style={{ fontSize: 9, color: "var(--trading-text-muted)", fontWeight: 500 }}>({c.sub})</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="m1-section" style={{ display: "flex", flexWrap: "wrap", gap: 12, animationDelay: "0.05s" }}>
+                  <PriceCard label="Spot LTP"     value={spotLtp}         flash={spotFlash}  sub="NIFTY-SPOT" />
+                  <PriceCard label="Futures LTP"  value={futLtp}          flash={futFlash}   sub={selectedSymbol} />
+                  <PriceCard label="Spread"       value={Math.abs(spread)} flash={null}      sub={spread > 0 ? "Fut Premium" : spread < 0 ? "Fut Discount" : "—"} />
+                  {latestRow && <PriceCard label="Last Close" value={latestRow.close} flash={null} sub={`${latestRow.time} candle`} />}
+                </div>
+              )}
+
+              {/* OI reference */}
+              {!isSplit && (
+                <div
+                  className="m1-section"
+                  style={{
+                    background: "var(--trading-surface)", border: "1.5px solid var(--trading-border)",
+                    borderRadius: 12, padding: "14px 20px",
+                    display: "flex", alignItems: "center", gap: 12,
+                    animationDelay: "0.07s",
+                  }}
+                >
+                  <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginRight: 4 }}>
+                    OI Signal Reference
+                  </span>
+                  <div style={{ width: 1, height: 20, background: "var(--trading-border)" }} />
+                  <span className="m1-method-btn m1-method-active">10m Spec</span>
+                  <span className="m1-method-btn m1-method-inactive">Tin starts 18</span>
+                  <span className="m1-method-btn m1-method-inactive">{selectedSymbol.includes("BANK") ? "BANKNIFTY 300-700" : "NIFTY 500-1000"}</span>
+                </div>
+              )}
+
+              {/* OI dashboard metrics */}
+              {!isSplit && latestRow && (
+                <div
+                  className="m1-section"
+                  style={{
+                    background: "var(--trading-surface)", border: "1.5px solid var(--trading-border)",
+                    borderRadius: 12, padding: "16px 20px", animationDelay: "0.09s",
+                  }}
+                >
+                  <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14 }}>
+                    OI Dashboard Metrics - {latestRow.time}
                   </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="m1-section" style={{ display: "flex", flexWrap: "wrap", gap: 12, animationDelay: "0.05s" }}>
-              <PriceCard label="Spot LTP"     value={spotLtp}         flash={spotFlash}  sub="NIFTY-SPOT" />
-              <PriceCard label="Futures LTP"  value={futLtp}          flash={futFlash}   sub={selectedSymbol} />
-              <PriceCard label="Spread"       value={Math.abs(spread)} flash={null}      sub={spread > 0 ? "Fut Premium" : spread < 0 ? "Fut Discount" : "—"} />
-              {latestRow && <PriceCard label="Last Close" value={latestRow.close} flash={null} sub={`${latestRow.time} candle`} />}
-            </div>
-          )}
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(96px, 1fr))",
+                      gap: 10,
+                    }}
+                  >
+                    {oiMetrics.map((metric) => (
+                      <OiMetricCard key={metric.label} label={metric.label} value={metric.value} tone={metric.tone} />
+                    ))}
+                  </div>
+                </div>
+              )}
 
-          {/* OI reference */}
-          {!isSplit && (
-            <div
-              className="m1-section"
-              style={{
-                background: "var(--trading-surface)", border: "1.5px solid var(--trading-border)",
-                borderRadius: 12, padding: "14px 20px",
-                display: "flex", alignItems: "center", gap: 12,
-                animationDelay: "0.07s",
-              }}
-            >
-              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginRight: 4 }}>
-                OI Signal Reference
-              </span>
-              <div style={{ width: 1, height: 20, background: "var(--trading-border)" }} />
-              <span className="m1-method-btn m1-method-active">10m Spec</span>
-              <span className="m1-method-btn m1-method-inactive">Tin starts 18</span>
-              <span className="m1-method-btn m1-method-inactive">{selectedSymbol.includes("BANK") ? "BANKNIFTY 300-700" : "NIFTY 500-1000"}</span>
-            </div>
-          )}
+              {/* Signal cards */}
+              {!isSplit && latestRow && (
+                <div className="m1-section" style={{ display: "flex", gap: 14, animationDelay: "0.11s" }}>
+                  <SignalCard
+                    title="Call Signal - Latest"
+                    signal={latestCallSignal}
+                    icon={
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+                        <polyline points="17 6 23 6 23 12"/>
+                      </svg>
+                    }
+                  />
+                  <SignalCard
+                    title="Put Signal - Latest"
+                    signal={latestPutSignal}
+                    icon={
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/>
+                        <polyline points="17 18 23 18 23 12"/>
+                      </svg>
+                    }
+                  />
+                </div>
+              )}
 
-          {/* OI dashboard metrics */}
-          {!isSplit && latestRow && (
-            <div
-              className="m1-section"
-              style={{
-                background: "var(--trading-surface)", border: "1.5px solid var(--trading-border)",
-                borderRadius: 12, padding: "16px 20px", animationDelay: "0.09s",
-              }}
-            >
-              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14 }}>
-                OI Dashboard Metrics - {latestRow.time}
-              </div>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(96px, 1fr))",
-                  gap: 10,
-                }}
-              >
-                {oiMetrics.map((metric) => (
-                  <OiMetricCard key={metric.label} label={metric.label} value={metric.value} tone={metric.tone} />
-                ))}
-              </div>
-            </div>
-          )}
+              {/* Historical table */}
+              <div className="m1-section" style={{ animationDelay: "0.13s" }}>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>
+                  Historical OI Dashboard Data
+                </div>
+                <div className="m1-oi-table-wrap">
+                  <table className="m1-oi-table">
+                    <colgroup>
+                      {historicalHeaders.map((h) => (
+                        <col key={h.key} style={{ width: tableColumnWidths[h.key] || "5%" }} />
+                      ))}
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        {marketColumnCount > 0 && (
+                          <th className="m1-th" colSpan={marketColumnCount} style={{ textAlign: "center", borderRight: "1px solid var(--trading-border)", color: "var(--trading-text-muted)" }}>TIME</th>
+                        )}
+                        {callColumnCount > 0 && (
+                          <th className="m1-th" colSpan={callColumnCount} style={{ textAlign: "center", borderRight: "1px solid var(--trading-border)", color: GREEN, background: "rgba(4,120,87,0.08)" }}>CALL SIDE</th>
+                        )}
+                        {futuresColumnCount > 0 && (
+                          <th className="m1-th" colSpan={futuresColumnCount} style={{ textAlign: "center", borderRight: "1px solid var(--trading-border)", color: BLUE, background: "rgba(26,95,168,0.08)" }}>FUTURES</th>
+                        )}
+                        {putColumnCount > 0 && (
+                          <th className="m1-th" colSpan={putColumnCount} style={{ textAlign: "center", borderRight: "1px solid var(--trading-border)", color: RED, background: "rgba(229,57,53,0.08)" }}>PUT SIDE</th>
+                        )}
+                        {signalColumnCount > 0 && (
+                          <th className="m1-th" colSpan={signalColumnCount} style={{ textAlign: "center", color: "var(--trading-text-muted)", background: "rgba(100,116,139,0.08)" }}>SIGNALS</th>
+                        )}
+                      </tr>
+                      <tr>
+                        {historicalHeaders.map((h) => {
+                          const isOiStart = h.key === "C_TL";
+                          const isPositive = ["C_Buy", "F_Buy", "P_Buy"].includes(h.key);
+                          const isNegative = ["C_Sell", "F_Sell", "P_Sell"].includes(h.key);
+                          const isSignalStart = h.key === "call";
 
-          {/* Signal cards */}
-          {!isSplit && latestRow && (
-            <div className="m1-section" style={{ display: "flex", gap: 14, animationDelay: "0.11s" }}>
-              <SignalCard
-                title="Call Signal - Latest"
-                signal={latestCallSignal}
-                icon={
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
-                    <polyline points="17 6 23 6 23 12"/>
-                  </svg>
-                }
-              />
-              <SignalCard
-                title="Put Signal - Latest"
-                signal={latestPutSignal}
-                icon={
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/>
-                    <polyline points="17 18 23 18 23 12"/>
-                  </svg>
-                }
-              />
-            </div>
-          )}
+                          let color = "var(--trading-text-muted)";
+                          if (isPositive) color = GREEN;
+                          else if (isNegative) color = RED;
 
-          {/* Historical table */}
-          <div className="m1-section" style={{ animationDelay: "0.13s" }}>
-            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>
-              Historical OI Dashboard Data
-            </div>
-            <div className="m1-oi-table-wrap">
-              <table className="m1-oi-table">
-                <colgroup>
-                  {historicalHeaders.map((h) => (
-                    <col key={h.key} style={{ width: tableColumnWidths[h.key] || "5%" }} />
-                  ))}
-                </colgroup>
-                <thead>
-                  <tr>
-                    {marketColumnCount > 0 && (
-                      <th className="m1-th" colSpan={marketColumnCount} style={{ textAlign: "center", borderRight: "1px solid var(--trading-border)", color: "var(--trading-text-muted)" }}>TIME</th>
-                    )}
-                    {callColumnCount > 0 && (
-                      <th className="m1-th" colSpan={callColumnCount} style={{ textAlign: "center", borderRight: "1px solid var(--trading-border)", color: GREEN, background: "rgba(4,120,87,0.08)" }}>CALL SIDE</th>
-                    )}
-                    {futuresColumnCount > 0 && (
-                      <th className="m1-th" colSpan={futuresColumnCount} style={{ textAlign: "center", borderRight: "1px solid var(--trading-border)", color: BLUE, background: "rgba(26,95,168,0.08)" }}>FUTURES</th>
-                    )}
-                    {putColumnCount > 0 && (
-                      <th className="m1-th" colSpan={putColumnCount} style={{ textAlign: "center", borderRight: "1px solid var(--trading-border)", color: RED, background: "rgba(229,57,53,0.08)" }}>PUT SIDE</th>
-                    )}
-                    {signalColumnCount > 0 && (
-                      <th className="m1-th" colSpan={signalColumnCount} style={{ textAlign: "center", color: "var(--trading-text-muted)", background: "rgba(100,116,139,0.08)" }}>SIGNALS</th>
-                    )}
-                  </tr>
-                  <tr>
-                    {historicalHeaders.map((h) => {
-                      const isOiStart = h.key === "C_TL";
-                      const isPositive = ["C_Buy", "F_Buy", "P_Buy"].includes(h.key);
-                      const isNegative = ["C_Sell", "F_Sell", "P_Sell"].includes(h.key);
-                      const isSignalStart = h.key === "call";
-
-                      let color = "var(--trading-text-muted)";
-                      if (isPositive) color = GREEN;
-                      else if (isNegative) color = RED;
-
-                      return (
-                        <th
-                          key={h.key}
-                          className="m1-th"
-                          style={{
-                            textAlign: h.align as any,
-                            color,
-                            borderLeft: isOiStart || isSignalStart ? "1px solid var(--trading-border)" : undefined,
-                            borderRight: "1px solid var(--trading-border)",
-                            padding: isSplit ? "4px 2px" : "5px 3px",
-                            fontSize: isSplit ? "8px" : "9px",
-                          }}
-                          title={h.label}
-                        >
-                          {h.label}
-                        </th>
-                      );
-                    })}
-                  </tr>
-                </thead>
-                <tbody>
-                  {isLoading ? (
-                    <tr><td colSpan={historicalHeaders.length} style={{ ...tdBase, textAlign: "center", padding: "32px 0", color: "var(--trading-text-muted)" }}>Loading market data…</td></tr>
-                  ) : tableRows.length === 0 ? (
-                    <tr><td colSpan={historicalHeaders.length} style={{ ...tdBase, textAlign: "center", padding: "32px 0", color: "var(--trading-text-muted)" }}>Awaiting finalized timeframe boundaries.</td></tr>
-                  ) : (
-                    displayedRows.map((row, idx) => {
-                      const isLatest = idx === 0;
-                      const rowIndex = tableRows.length - 1 - idx;
-                      const tin = isLatest && latestOiMetrics ? latestOiMetrics.tin : 18 + rowIndex;
-                      const rowOiMetrics = isLatest && latestOiMetrics ? metricsFromApiPayload(latestOiMetrics) : buildFallbackOiMetrics(rowIndex, isLatest);
-                      const callSignal = isLatest && latestOiMetrics ? latestOiMetrics.callSignal : getCallOiSignal(rowOiMetrics);
-                      const putSignal = isLatest && latestOiMetrics ? latestOiMetrics.putSignal : PUT_INVERSE[callSignal];
-                      const callProps = OI_SIGNAL_MAP[callSignal];
-                      const putProps = OI_SIGNAL_MAP[putSignal];
-
-                      const callBadge: React.CSSProperties = {
-                        background: callProps.bg,
-                        color: callProps.text,
-                      };
-                      const putBadge: React.CSSProperties = {
-                        background: putProps.bg,
-                        color: putProps.text,
-                      };
-
-                      return (
-                        <tr
-                          key={idx}
-                          className="m1-tr"
-                          style={{ background: isLatest ? "rgba(4,120,87,0.04)" : "transparent", transition: "background 0.15s" }}
-                        >
+                          return (
+                            <th
+                              key={h.key}
+                              className="m1-th"
+                              style={{
+                                textAlign: h.align as any,
+                                color,
+                                borderLeft: isOiStart || isSignalStart ? "1px solid var(--trading-border)" : undefined,
+                                borderRight: "1px solid var(--trading-border)",
+                                padding: isSplit ? "4px 2px" : "5px 3px",
+                                fontSize: isSplit ? "8px" : "9px",
+                              }}
+                              title={h.label}
+                            >
+                              {h.label}
+                            </th>
+                          );
+                        })}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {isClosed ? (
+                        <tr>
                           <td
-                            title={row.time}
-                            style={{ ...tdBase, textAlign: "center", fontWeight: isLatest ? 800 : 600, color: isLatest ? GREEN : "var(--trading-text-active)" }}
+                            colSpan={historicalHeaders.length}
+                            style={{
+                              ...tdBase,
+                              textAlign: "center",
+                              padding: "48px 0",
+                              color: "#E53935",
+                              fontSize: "14px",
+                              fontWeight: 800,
+                              letterSpacing: "0.05em",
+                            }}
                           >
-                            {row.time}
-                            {isLatest && !isSplit && (
-                              <span title="Latest row" style={{ marginLeft: 3, display: "inline-block", width: 5, height: 5, borderRadius: "50%", background: GREEN }} />
-                            )}
-                          </td>
-                          <td style={{ ...tdBase, textAlign: "center", color: "var(--trading-text-muted)", fontWeight: 800 }}>
-                            {tin}
-                          </td>
-                          {rowOiMetrics.filter((metric) => visibleOiMetricKeys.has(metric.label)).map((metric, metricIdx) => {
-                            const color = metric.tone === "positive" ? GREEN : metric.tone === "negative" ? RED : "var(--trading-text-active)";
-                            return (
-                              <td
-                                key={metric.label}
-                                title={`${metric.label}: ${formatFullOiValue(metric.value)}`}
-                                style={{
-                                  ...tdBase,
-                                  textAlign: "right",
-                                  borderLeft: metricIdx === 0 ? "1px solid var(--trading-border)" : undefined,
-                                  color,
-                                  fontWeight: metric.tone === "neutral" ? 600 : 800,
-                                }}
-                              >
-                                {formatTableOiValue(metric.value)}
-                              </td>
-                            );
-                          })}
-                          <td style={{ ...tdBase, textAlign: "center", borderLeft: "1px solid var(--trading-border)" }}>
-                            <span className="m1-badge" title={callProps.label} style={callBadge}>{getSignalShortLabel(callSignal)}</span>
-                          </td>
-                          <td style={{ ...tdBase, textAlign: "center" }}>
-                            <span className="m1-badge" title={putProps.label} style={putBadge}>{getSignalShortLabel(putSignal)}</span>
+                            Market Closed
                           </td>
                         </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-            {isSplit && (
-              <button
-                onClick={() => setShowFullGrid(!showFullGrid)}
-                style={{
-                  marginTop: 8,
-                  width: "100%",
-                  padding: "6px 12px",
-                  borderRadius: 8,
-                  border: "1.5px solid var(--trading-border)",
-                  background: "var(--trading-surface)",
-                  color: "var(--trading-text-muted)",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  transition: "all 0.15s",
-                }}
-                className="secondary-btn"
-              >
-                {showFullGrid ? "Collapse to Compact Grid ▲" : `Show Full Grid (${tableRows.length} Rows, ${historicalHeaders.length} Columns) ▼`}
-              </button>
-            )}
-          </div>
+                      ) : isLoading ? (
+                        <tr><td colSpan={historicalHeaders.length} style={{ ...tdBase, textAlign: "center", padding: "32px 0", color: "var(--trading-text-muted)" }}>Loading market data…</td></tr>
+                      ) : tableRows.length === 0 ? (
+                        <tr><td colSpan={historicalHeaders.length} style={{ ...tdBase, textAlign: "center", padding: "32px 0", color: "var(--trading-text-muted)" }}>Awaiting finalized timeframe boundaries.</td></tr>
+                      ) : (
+                        displayedRows.map((row, idx) => {
+                          const isLatest = idx === 0;
+                          const rowIndex = tableRows.length - 1 - idx;
+                          const tin = isLatest && latestOiMetrics ? latestOiMetrics.tin : 18 + rowIndex;
+                          const rowOiMetrics = isLatest && latestOiMetrics ? metricsFromApiPayload(latestOiMetrics) : buildFallbackOiMetrics(rowIndex, isLatest);
+                          const callSignal = isLatest && latestOiMetrics ? latestOiMetrics.callSignal : getCallOiSignal(rowOiMetrics);
+                          const putSignal = isLatest && latestOiMetrics ? latestOiMetrics.putSignal : PUT_INVERSE[callSignal];
+                          const callProps = OI_SIGNAL_MAP[callSignal];
+                          const putProps = OI_SIGNAL_MAP[putSignal];
+
+                          const callBadge: React.CSSProperties = {
+                            background: callProps.bg,
+                            color: callProps.text,
+                          };
+                          const putBadge: React.CSSProperties = {
+                            background: putProps.bg,
+                            color: putProps.text,
+                          };
+
+                          return (
+                            <tr
+                              key={idx}
+                              className="m1-tr"
+                              style={{ background: isLatest ? "rgba(4,120,87,0.04)" : "transparent", transition: "background 0.15s" }}
+                            >
+                              <td
+                                title={row.time}
+                                style={{ ...tdBase, textAlign: "center", fontWeight: isLatest ? 800 : 600, color: isLatest ? GREEN : "var(--trading-text-active)" }}
+                              >
+                                {row.time}
+                                {isLatest && !isSplit && (
+                                  <span title="Latest row" style={{ marginLeft: 3, display: "inline-block", width: 5, height: 5, borderRadius: "50%", background: GREEN }} />
+                                )}
+                              </td>
+                              <td style={{ ...tdBase, textAlign: "center", color: "var(--trading-text-muted)", fontWeight: 800 }}>
+                                {tin}
+                              </td>
+                              {rowOiMetrics.filter((metric) => visibleOiMetricKeys.has(metric.label)).map((metric, metricIdx) => {
+                                const color = metric.tone === "positive" ? GREEN : metric.tone === "negative" ? RED : "var(--trading-text-active)";
+                                return (
+                                  <td
+                                    key={metric.label}
+                                    title={`${metric.label}: ${formatFullOiValue(metric.value)}`}
+                                    style={{
+                                      ...tdBase,
+                                      textAlign: "right",
+                                      borderLeft: metricIdx === 0 ? "1px solid var(--trading-border)" : undefined,
+                                      color,
+                                      fontWeight: metric.tone === "neutral" ? 600 : 800,
+                                    }}
+                                  >
+                                    {formatTableOiValue(metric.value)}
+                                  </td>
+                                );
+                              })}
+                              <td style={{ ...tdBase, textAlign: "center", borderLeft: "1px solid var(--trading-border)" }}>
+                                <span className="m1-badge" title={callProps.label} style={callBadge}>{getSignalShortLabel(callSignal)}</span>
+                              </td>
+                              <td style={{ ...tdBase, textAlign: "center" }}>
+                                <span className="m1-badge" title={putProps.label} style={putBadge}>{getSignalShortLabel(putSignal)}</span>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {isSplit && (
+                  <button
+                    onClick={() => setShowFullGrid(!showFullGrid)}
+                    style={{
+                      marginTop: 8,
+                      width: "100%",
+                      padding: "6px 12px",
+                      borderRadius: 8,
+                      border: "1.5px solid var(--trading-border)",
+                      background: "var(--trading-surface)",
+                      color: "var(--trading-text-muted)",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      transition: "all 0.15s",
+                    }}
+                    className="secondary-btn"
+                  >
+                    {showFullGrid ? "Collapse to Compact Grid ▲" : `Show Full Grid (${tableRows.length} Rows, ${historicalHeaders.length} Columns) ▼`}
+                  </button>
+                )}
+              </div>
+            </>
 
         </div>
       </div>

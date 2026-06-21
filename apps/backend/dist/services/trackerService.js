@@ -3,12 +3,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getSessionData = exports.resumeSession = exports.updateTrackerStrikes = exports.startTrackerSession = exports.initTrackerEngine = exports.activeSessions = void 0;
+exports.getSessionData = exports.resumeSession = exports.updateTrackerStrikes = exports.startTrackerSession = exports.initTrackerEngine = exports.syncAetramSubscriptions = exports.activeSessions = void 0;
 const Module2Session_1 = require("../models/Module2Session");
 const Module2StrikeTick_1 = require("../models/Module2StrikeTick");
 const redis_1 = __importDefault(require("../config/redis"));
 const socketService_1 = require("./socketService");
 const module2InteractiveDataService_1 = require("./module2InteractiveDataService");
+const aetramMarketDataService_1 = require("./aetramMarketDataService");
 // In-memory cache for active tracker sessions to avoid database load
 exports.activeSessions = {};
 let boundaryTimer = null;
@@ -27,6 +28,32 @@ const getFuturesSymbol = (index) => {
 /**
  * Initializes the Module 2 tracking engine and schedules the minute boundary loop
  */
+/**
+ * Synchronizes active option strike subscriptions with AETRAM MarketData API
+ */
+const syncAetramSubscriptions = async () => {
+    const resolvedInstruments = [];
+    for (const session of Object.values(exports.activeSessions)) {
+        for (const strike of session.selectedStrikes) {
+            try {
+                const inst = await (0, aetramMarketDataService_1.resolveOptionStrikeToken)(session.indexSymbol, session.expiryDate, strike);
+                if (inst) {
+                    resolvedInstruments.push(inst);
+                }
+            }
+            catch (err) {
+                console.error(`[Tracker] Error resolving Aetram strike ${strike}:`, err);
+            }
+        }
+    }
+    if (resolvedInstruments.length > 0) {
+        await (0, aetramMarketDataService_1.subscribeToInstruments)(resolvedInstruments);
+    }
+};
+exports.syncAetramSubscriptions = syncAetramSubscriptions;
+/**
+ * Initializes the Module 2 tracking engine and schedules the minute boundary loop
+ */
 const initTrackerEngine = async () => {
     (0, module2InteractiveDataService_1.logModule2InteractiveStatus)();
     // Load any existing active sessions from DB on startup (self-healing)
@@ -39,6 +66,7 @@ const initTrackerEngine = async () => {
         for (const session of dbSessions) {
             await (0, exports.resumeSession)(session._id.toString());
         }
+        await (0, exports.syncAetramSubscriptions)();
         console.log(`[TrackerEngine] Restored ${dbSessions.length} active sessions from database.`);
     }
     catch (error) {
@@ -386,17 +414,28 @@ const startTrackerSession = async (userId, sessionType, indexSymbol, expiryDate,
         oiLow: futOi
     };
     // Create session record in DB
-    const doc = await Module2Session_1.Module2Session.create({
-        user_id: userId,
-        session_type: sessionType,
-        index_symbol: indexSymbol,
-        expiry_date: expiryDate,
-        selected_strikes_json: selectedStrikes,
-        day_open_prices_json: dayOpenPrices,
-        futures_oi_json: futuresOI
-    });
+    let sessionId;
+    let createdAt;
+    try {
+        const doc = await Module2Session_1.Module2Session.create({
+            user_id: userId,
+            session_type: sessionType,
+            index_symbol: indexSymbol,
+            expiry_date: expiryDate,
+            selected_strikes_json: selectedStrikes,
+            day_open_prices_json: dayOpenPrices,
+            futures_oi_json: futuresOI
+        });
+        sessionId = doc._id.toString();
+        createdAt = doc.created_at;
+    }
+    catch (dbErr) {
+        console.warn("[TrackerEngine] MongoDB offline. Creating tracker session in-memory only.");
+        sessionId = "mock-session-" + Date.now() + "-" + Math.random().toString(36).substring(2, 9);
+        createdAt = new Date();
+    }
     const sessionData = {
-        sessionId: doc._id.toString(),
+        sessionId,
         userId,
         dataSource: (0, module2InteractiveDataService_1.getModule2DataSource)(),
         sessionType,
@@ -405,11 +444,13 @@ const startTrackerSession = async (userId, sessionType, indexSymbol, expiryDate,
         selectedStrikes,
         dayOpenPrices,
         strikes,
-        createdAt: doc.created_at,
+        createdAt,
         futuresOI
     };
     // Add to local active sessions cache
-    exports.activeSessions[doc._id.toString()] = sessionData;
+    exports.activeSessions[sessionId] = sessionData;
+    // Trigger Aetram subscription synchronization in the background
+    (0, exports.syncAetramSubscriptions)().catch((err) => console.error("[TrackerEngine] Aetram subscription sync failed:", err));
     return sessionData;
 };
 exports.startTrackerSession = startTrackerSession;
@@ -452,11 +493,18 @@ const updateTrackerStrikes = async (sessionId, newStrikes) => {
     }
     // Remove retired strikes from the active selection
     session.selectedStrikes = newStrikes;
+    // Trigger Aetram subscription synchronization in the background
+    (0, exports.syncAetramSubscriptions)().catch((err) => console.error("[TrackerEngine] Aetram subscription sync failed:", err));
     // Update Database session configuration
-    await Module2Session_1.Module2Session.findByIdAndUpdate(sessionId, {
-        selected_strikes_json: newStrikes,
-        day_open_prices_json: session.dayOpenPrices
-    });
+    try {
+        await Module2Session_1.Module2Session.findByIdAndUpdate(sessionId, {
+            selected_strikes_json: newStrikes,
+            day_open_prices_json: session.dayOpenPrices
+        });
+    }
+    catch (dbErr) {
+        console.warn("[TrackerEngine] MongoDB offline. Skipping DB update in updateTrackerStrikes.");
+    }
     return session;
 };
 exports.updateTrackerStrikes = updateTrackerStrikes;
@@ -464,7 +512,14 @@ exports.updateTrackerStrikes = updateTrackerStrikes;
  * Resumes an active session from the database (e.g. on server restart)
  */
 const resumeSession = async (sessionId) => {
-    const doc = await Module2Session_1.Module2Session.findById(sessionId);
+    let doc = null;
+    try {
+        doc = await Module2Session_1.Module2Session.findById(sessionId);
+    }
+    catch (dbErr) {
+        console.warn("[TrackerEngine] MongoDB offline. Cannot resume session from DB.");
+        return null;
+    }
     if (!doc)
         return null;
     const strikes = {};

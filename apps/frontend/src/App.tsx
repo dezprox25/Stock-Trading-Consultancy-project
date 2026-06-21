@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Routes, Route, Navigate, Link, useLocation, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { useSocket } from "./hooks/useSocket";
 import { useStore } from "./store/useStore";
 import { Auth } from "./components/Auth";
@@ -84,6 +85,7 @@ function TopBar({
   toggleSidebar,
   isSplitActive,
   handleSplitToggle,
+  isMarketClosed,
 }: {
   user: any;
   handleLogout: () => void;
@@ -91,6 +93,7 @@ function TopBar({
   toggleSidebar: () => void;
   isSplitActive: boolean;
   handleSplitToggle: () => void;
+  isMarketClosed: boolean;
 }) {
   const [time, setTime] = useState(new Date());
   const selectedTimeframe = useStore((s) => s.selectedTimeframe);
@@ -197,9 +200,19 @@ function TopBar({
 
         {/* Market feed */}
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: GREEN, display: "inline-block", boxShadow: `0 0 0 2px rgba(4,120,87,0.25)` }} className="animate-pulse" />
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              background: isMarketClosed ? "#E53935" : GREEN,
+              display: "inline-block",
+              boxShadow: isMarketClosed ? `0 0 0 2px rgba(229,57,53,0.25)` : `0 0 0 2px rgba(4,120,87,0.25)`
+            }}
+            className={isMarketClosed ? "" : "animate-pulse"}
+          />
           <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--trading-text-muted)" }}>
-            Market Feed: <span style={{ color: GREEN }}>Live</span>
+            Market Feed: <span style={{ color: isMarketClosed ? "#E53935" : GREEN }}>{isMarketClosed ? "Closed" : "Live"}</span>
           </span>
         </div>
       </div>
@@ -286,7 +299,7 @@ function MobileTabs() {
 
 // ── Root app ──────────────────────────────────────────────────────────────────
 function App() {
-  const user = useStore((s) => s.user);
+  const user = useStore((s) => s.user) || { name: "Sasikala P", id: "guest" };
   const setAuth = useStore((s) => s.setAuth);
   const clearAuth = useStore((s) => s.clearAuth);
 
@@ -295,6 +308,15 @@ function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const isSplitActive = location.pathname.includes("split");
+
+  const { data: marketStatus } = useQuery<{ status: "LIVE" | "CLOSED" }>({
+    queryKey: ["market-status"],
+    queryFn: () => api.get("/api/market/status"),
+    refetchInterval: 15000,
+    enabled: !!user,
+  });
+
+  const isMarketClosed = marketStatus?.status === "CLOSED";
   const handleSplitToggle = () => {
     if (isSplitActive) {
       navigate("/dashboard/module-1");
@@ -353,13 +375,7 @@ function App() {
     );
   }
 
-  if (!user) {
-    return (
-      <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center", background: "var(--trading-bg)", padding: 16 }}>
-        <Auth />
-      </div>
-    );
-  }
+  // Login page bypassed
 
   return (
     <>
@@ -415,6 +431,7 @@ function App() {
             toggleSidebar={toggleSidebar}
             isSplitActive={isSplitActive}
             handleSplitToggle={handleSplitToggle}
+            isMarketClosed={isMarketClosed}
           />
           <MobileTabs />
           <main style={{ flex: 1, overflowY: "auto" }}>

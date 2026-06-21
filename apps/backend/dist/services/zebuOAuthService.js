@@ -5,6 +5,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getZebuOAuthStatus = exports.resolveZebuSessionToken = exports.getCachedZebuSessionToken = exports.buildZebuAuthorizeUrl = exports.hasZebuOAuthConfig = exports.getZebuOAuthMissingConfig = exports.setZebuAuthCode = void 0;
 const axios_1 = __importDefault(require("axios"));
+const crypto_1 = __importDefault(require("crypto"));
+const sha256 = (text) => {
+    return crypto_1.default.createHash("sha256").update(text).digest("hex");
+};
 let inMemorySessionToken = null;
 let inMemoryAuthCode = null;
 const isPlaceholder = (value) => !value || value.includes("your-") || value.includes("placeholder");
@@ -68,6 +72,47 @@ const resolveZebuSessionToken = async () => {
     if (!isPlaceholder(envToken)) {
         inMemorySessionToken = envToken;
         return inMemorySessionToken;
+    }
+    // 1. Try QuickAuth Direct Login first if credentials exist
+    const uid = (process.env.ZEBU_USER_ID || process.env.ZEBU_CLIENT_ID || "").trim();
+    const pwd = (process.env.ZEBU_PASSWORD || "").trim();
+    const factor2 = (process.env.ZEBU_FACTOR2 || "").trim();
+    const vc = (process.env.ZEBU_VENDOR_CODE || "").trim();
+    const appkey = (process.env.MOD1_API_KEY || process.env.BROKER_API_KEY || "").trim();
+    const loginUrl = (process.env.ZEBU_LOGIN_URL || "").trim();
+    if (uid && pwd && factor2 && vc && appkey && loginUrl) {
+        try {
+            console.log("[ZebuAuth] Attempting direct QuickAuth login...");
+            const pwdHash = sha256(pwd);
+            const appkeyHash = sha256(`${uid}|${appkey}`);
+            const payload = {
+                apkversion: "1.0.0",
+                uid,
+                pwd: pwdHash,
+                factor2,
+                imei: (process.env.ZEBU_IMEI || "abc1234").trim(),
+                source: "API",
+                vc,
+                appkey: appkeyHash
+            };
+            const dataString = `jData=${JSON.stringify(payload)}`;
+            const response = await axios_1.default.post(loginUrl, dataString, {
+                headers: {
+                    "Content-Type": "application/x-www-form-urlencoded"
+                }
+            });
+            if (response.data && response.data.stat === "Ok" && response.data.susertoken) {
+                console.log("[ZebuAuth] QuickAuth login successful.");
+                inMemorySessionToken = response.data.susertoken;
+                return inMemorySessionToken;
+            }
+            else {
+                console.warn("[ZebuAuth] QuickAuth login failed, response:", response.data);
+            }
+        }
+        catch (err) {
+            console.error("[ZebuAuth] QuickAuth login error:", err?.message || err);
+        }
     }
     if (!(0, exports.hasZebuOAuthConfig)())
         return null;

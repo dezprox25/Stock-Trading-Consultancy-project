@@ -3,9 +3,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.startZebuMarketDataFeed = exports.isZebuMarketDataConfigured = exports.getZebuMissingConfig = void 0;
+exports.startZebuMarketDataFeed = exports.isZebuMarketDataConfigured = exports.getZebuMissingConfig = exports.isZebuLiveConnected = void 0;
 const ws_1 = __importDefault(require("ws"));
 const zebuOAuthService_1 = require("./zebuOAuthService");
+let wsConnected = false;
+const isZebuLiveConnected = () => wsConnected;
+exports.isZebuLiveConnected = isZebuLiveConnected;
 const isPlaceholder = (value) => !value || value.includes("your-") || value.includes("placeholder");
 const getZebuWsUrl = () => process.env.ZEBU_WS_URL || process.env.CLIENT_API_URL || "";
 const getZebuUserId = () => process.env.ZEBU_CLIENT_ID || process.env.ZEBU_USER_ID || "";
@@ -45,6 +48,7 @@ const parseInstrumentEnv = (value) => {
         .filter((instrument) => instrument !== null);
 };
 const getModule1ZebuInstruments = () => [
+    ...parseInstrumentEnv(process.env.ZEBU_NIFTY_SPOT_TOKEN || "NSE|26000:NIFTY-SPOT"),
     ...parseInstrumentEnv(process.env.ZEBU_NIFTY_FUT_TOKEN),
     ...parseInstrumentEnv(process.env.ZEBU_NIFTY_CE_TOKENS),
     ...parseInstrumentEnv(process.env.ZEBU_NIFTY_PE_TOKENS),
@@ -57,8 +61,14 @@ const getZebuMissingConfig = () => {
         missing.push("ZEBU_WS_URL or CLIENT_API_URL");
     if (isPlaceholder(getZebuUserId()))
         missing.push("ZEBU_CLIENT_ID or ZEBU_USER_ID");
-    if (isPlaceholder(getZebuSessionToken()) && (0, zebuOAuthService_1.getZebuOAuthMissingConfig)().length > 0) {
-        missing.push("ZEBU_SUSERTOKEN/ZEBU_SESSION_TOKEN or complete Zebu OAuth config");
+    const hasDirectAuth = !isPlaceholder(process.env.ZEBU_PASSWORD) &&
+        !isPlaceholder(process.env.ZEBU_FACTOR2) &&
+        !isPlaceholder(process.env.ZEBU_VENDOR_CODE) &&
+        !isPlaceholder(process.env.ZEBU_LOGIN_URL);
+    const hasToken = !isPlaceholder(getZebuSessionToken());
+    const hasOAuth = (0, zebuOAuthService_1.getZebuOAuthMissingConfig)().length === 0;
+    if (!hasToken && !hasDirectAuth && !hasOAuth) {
+        missing.push("ZEBU_SUSERTOKEN/ZEBU_SESSION_TOKEN, QuickAuth credentials, or complete Zebu OAuth config");
     }
     if (isPlaceholder(process.env.MOD1_API_KEY))
         missing.push("MOD1_API_KEY");
@@ -107,6 +117,7 @@ const startZebuMarketDataFeed = (onTick, onDataSource, onFallback) => {
     const ws = new ws_1.default(wsUrl);
     let liveConnected = false;
     ws.on("open", async () => {
+        wsConnected = true;
         let sessionToken = null;
         try {
             sessionToken = await (0, zebuOAuthService_1.resolveZebuSessionToken)();
@@ -149,11 +160,13 @@ const startZebuMarketDataFeed = (onTick, onDataSource, onFallback) => {
         }
     });
     ws.on("close", () => {
+        wsConnected = false;
         const reason = liveConnected ? "live feed closed" : "live feed closed before connection";
         onDataSource("SIMULATOR");
         onFallback(reason);
     });
     ws.on("error", () => {
+        wsConnected = false;
         onDataSource("SIMULATOR");
         onFallback("live feed connection error");
     });

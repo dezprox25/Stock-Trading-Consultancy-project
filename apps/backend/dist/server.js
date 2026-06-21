@@ -24,6 +24,7 @@ const pivotService_1 = require("./services/pivotService");
 const dataFeed_1 = require("./services/dataFeed");
 const socketService_1 = require("./services/socketService");
 const trackerService_1 = require("./services/trackerService");
+const aetramMarketDataService_1 = require("./services/aetramMarketDataService");
 const app = (0, express_1.default)();
 exports.app = app;
 const server = http_1.default.createServer(app);
@@ -154,6 +155,7 @@ const startServer = async () => {
     (0, pivotService_1.initPivotService)();
     (0, socketService_1.initSocketServer)(io);
     (0, trackerService_1.initTrackerEngine)();
+    (0, aetramMarketDataService_1.initAetramMarketDataService)();
     (0, dataFeed_1.initDataFeed)();
     // Start HTTP / WebSocket Server
     server.listen(PORT, () => {

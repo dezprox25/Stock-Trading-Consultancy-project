@@ -25,6 +25,18 @@ const getCookie = (req, name) => {
     }, {});
     return cookies[name] || null;
 };
+// Local in-memory users store for when MongoDB is offline
+const inMemoryUsers = new Map();
+// Pre-seed a default guest user so the user doesn't strictly have to register
+bcrypt_1.default.hash("password123", 12).then(hashed => {
+    inMemoryUsers.set("60c72b2f9b1d8a0015f8e567", {
+        _id: "60c72b2f9b1d8a0015f8e567",
+        username: "guest",
+        password: hashed,
+        name: "Guest User",
+        status: "active"
+    });
+});
 // User Registration — saves user active, no OTP
 const register = async (req, res) => {
     try {
@@ -33,22 +45,46 @@ const register = async (req, res) => {
             return res.status(400).json({ error: "Validation failed", details: parseResult.error.errors });
         }
         const { username, password, name } = parseResult.data;
-        const existingUser = await User_1.User.findOne({ username });
+        let existingUser = null;
+        try {
+            existingUser = await User_1.User.findOne({ username });
+        }
+        catch (dbErr) {
+            console.warn("[Auth] MongoDB offline. Checking in-memory users.");
+            existingUser = Array.from(inMemoryUsers.values()).find(u => u.username === username);
+        }
         if (existingUser) {
             return res.status(409).json({ error: "Username is already registered" });
         }
         const hashedPassword = await bcrypt_1.default.hash(password, 12);
-        const newUser = await User_1.User.create({
-            username,
-            password: hashedPassword,
-            name: name || username,
-            status: "active",
-        });
-        await Watchlist_1.Watchlist.create({
-            user_id: newUser._id,
-            symbols_json: [],
-            column_prefs_json: {},
-        });
+        let newUser;
+        try {
+            newUser = await User_1.User.create({
+                username,
+                password: hashedPassword,
+                name: name || username,
+                status: "active",
+            });
+            await Watchlist_1.Watchlist.create({
+                user_id: newUser._id,
+                symbols_json: [],
+                column_prefs_json: {},
+            });
+        }
+        catch (dbErr) {
+            console.warn("[Auth] MongoDB offline. Registering user in memory.");
+            const mockId = "mock-user-" + Date.now() + "-" + Math.random().toString(36).substring(2, 9);
+            newUser = {
+                _id: mockId,
+                username: password ? hashedPassword : "", // just for safety
+                password: hashedPassword,
+                name: name || username,
+                status: "active",
+            };
+            // Keep it in both locations
+            newUser.username = username;
+            inMemoryUsers.set(mockId, newUser);
+        }
         // Auto-login with JWT
         const accessToken = (0, token_1.generateAccessToken)(newUser._id.toString());
         const refreshToken = (0, token_1.generateRefreshToken)(newUser._id.toString());
@@ -82,7 +118,14 @@ const login = async (req, res) => {
             return res.status(400).json({ error: "Validation failed", details: parseResult.error.errors });
         }
         const { username, password } = parseResult.data;
-        const user = await User_1.User.findOne({ username });
+        let user = null;
+        try {
+            user = await User_1.User.findOne({ username });
+        }
+        catch (dbErr) {
+            console.warn("[Auth] MongoDB offline. Authenticating via in-memory users.");
+            user = Array.from(inMemoryUsers.values()).find(u => u.username === username);
+        }
         if (!user) {
             return res.status(401).json({ error: "Invalid credentials" });
         }
@@ -121,7 +164,14 @@ const refresh = async (req, res) => {
             return res.status(401).json({ error: "Refresh token not provided" });
         }
         const decoded = (0, token_1.verifyRefreshToken)(refreshToken);
-        const user = await User_1.User.findById(decoded.userId);
+        let user = null;
+        try {
+            user = await User_1.User.findById(decoded.userId);
+        }
+        catch (dbErr) {
+            console.warn("[Auth] MongoDB offline. Finding user in-memory for refresh.");
+            user = inMemoryUsers.get(decoded.userId);
+        }
         if (!user || user.status === "inactive") {
             return res.status(401).json({ error: "User is no longer active" });
         }

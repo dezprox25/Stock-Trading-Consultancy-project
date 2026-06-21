@@ -20,6 +20,7 @@ import { initPivotService } from "./services/pivotService";
 import { initDataFeed } from "./services/dataFeed";
 import { initSocketServer } from "./services/socketService";
 import { initTrackerEngine } from "./services/trackerService";
+import { initAetramMarketDataService } from "./services/aetramMarketDataService";
 
 const app = express();
 const server = http.createServer(app);
@@ -177,6 +178,7 @@ const startServer = async () => {
   initPivotService();
   initSocketServer(io);
   initTrackerEngine();
+  initAetramMarketDataService();
   initDataFeed();
 
   // Start HTTP / WebSocket Server

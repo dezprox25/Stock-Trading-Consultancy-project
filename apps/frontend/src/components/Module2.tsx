@@ -177,6 +177,14 @@ export const Module2 = ({ isSplit = false }: { isSplit?: boolean }) => {
     onSuccess: (data) => setActiveSession(data),
   });
 
+  const { data: marketStatus } = useQuery<{ status: "LIVE" | "CLOSED" }>({
+    queryKey: ["market-status"],
+    queryFn: () => api.get("/api/market/status"),
+    refetchInterval: 15000,
+  });
+
+  const isClosed = marketStatus?.status === "CLOSED";
+
   const handleExportCSV = async () => {
     if (!activeSession) return;
     try {
@@ -244,6 +252,11 @@ export const Module2 = ({ isSplit = false }: { isSplit?: boolean }) => {
           to   { opacity: 1; transform: translateY(0); }
         }
         .m2-section { animation: m2-enter 0.35s ease both; }
+
+        @keyframes m2-pulse {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.03); opacity: 0.95; }
+        }
 
         .m2-th {
           font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 700;
@@ -347,14 +360,10 @@ export const Module2 = ({ isSplit = false }: { isSplit?: boolean }) => {
               </div>
 
               <div>
-                {activeSession && isLiveInteractive ? (
+                {activeSession && isLiveInteractive && (
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 5, background: "rgba(4,120,87,0.1)", fontSize: 11, fontWeight: 700, color: GREEN }}>
                     <span style={{ width: 5, height: 5, borderRadius: "50%", background: GREEN }} />
                     Live API
-                  </span>
-                ) : (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 5, background: "rgba(229,57,53,0.08)", fontSize: 11, fontWeight: 700, color: RED }}>
-                    Unavailable
                   </span>
                 )}
               </div>
@@ -384,250 +393,233 @@ export const Module2 = ({ isSplit = false }: { isSplit?: boolean }) => {
               </div>
 
               <div>
-                {activeSession && isLiveInteractive ? (
+                {activeSession && isLiveInteractive && (
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 8, background: "rgba(4,120,87,0.1)", border: "1.5px solid rgba(4,120,87,0.25)", fontSize: 12, fontWeight: 700, color: GREEN }}>
                     <span style={{ width: 7, height: 7, borderRadius: "50%", background: GREEN, display: "inline-block" }} className="animate-pulse" />
                     Live Interactive API
                   </span>
-                ) : (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 8, background: "rgba(229,57,53,0.08)", border: "1.5px solid rgba(229,57,53,0.2)", fontSize: 12, fontWeight: 700, color: RED }}>
-                    Interactive API Unavailable
-                  </span>
                 )}
               </div>
             </div>
           )}
 
-          {sessionDataSource === "UNAVAILABLE" && (
-            <div
-              className="m2-section"
-              style={{
-                background: "rgba(229,57,53,0.06)",
-                border: "1.5px solid rgba(229,57,53,0.22)",
-                borderRadius: 10,
-                padding: "10px 14px",
-                color: RED,
-                fontSize: 12,
-                fontWeight: 700,
-              }}
-            >
-              Module2 live Interactive Data API is unavailable. Backend will not show simulated tracker values until provider endpoint/session details are configured.
-            </div>
-          )}
+              <>
 
-          {/* Configuration */}
-          {isConfigExpanded ? (
-            <div
-              className="m2-section"
-              style={{
-                background: "var(--trading-surface)", border: "1.5px solid var(--trading-border)",
-                borderRadius: 14, padding: "20px 24px",
-                boxShadow: "0 1px 8px rgba(0,0,0,0.05)", animationDelay: "0.04s",
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.15em" }}>
-                  Session Configuration
-                </span>
-                {isSplit && (
+
+              {/* Configuration */}
+              {isConfigExpanded ? (
+                <div
+                  className="m2-section"
+                  style={{
+                    background: "var(--trading-surface)", border: "1.5px solid var(--trading-border)",
+                    borderRadius: 14, padding: "20px 24px",
+                    boxShadow: "0 1px 8px rgba(0,0,0,0.05)", animationDelay: "0.04s",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+                    <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.15em" }}>
+                      Session Configuration
+                    </span>
+                    {isSplit && (
+                      <button
+                        onClick={() => setIsConfigExpanded(false)}
+                        style={{
+                          background: "rgba(4,120,87,0.08)", border: "none", color: GREEN,
+                          fontWeight: 700, fontSize: 11, cursor: "pointer", padding: "4px 10px", borderRadius: 5
+                        }}
+                      >
+                        Hide Config ▲
+                      </button>
+                    )}
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 20 }}>
+                    <SelectField
+                      label="Index Symbol" value={indexSymbol} onChange={setIndexSymbol}
+                      options={[
+                        { value: "NIFTY50",   label: "NIFTY 50 (Step 50)" },
+                        { value: "BANKNIFTY", label: "BANK NIFTY (Step 100)" },
+                        { value: "FINNIFTY",  label: "FIN NIFTY (Step 50)" },
+                      ]}
+                    />
+                    <SelectField
+                      label="Options Expiry" value={expiryDate} onChange={setExpiryDate}
+                      options={[
+                        { value: "2026-06-04", label: "04-JUN-2026 (Weekly)" },
+                        { value: "2026-06-11", label: "11-JUN-2026 (Weekly)" },
+                        { value: "2026-06-25", label: "25-JUN-2026 (Monthly)" },
+                      ]}
+                    />
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      <label style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 600, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                        Session Type
+                      </label>
+                      <SegmentedControl
+                        options={[{ key: "CE" as const, label: "CE" }, { key: "PE" as const, label: "PE" }, { key: "mixed" as const, label: "Mixed" }]}
+                        value={sessionType} onChange={setSessionType}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Strike selection */}
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                        Select Strikes
+                      </span>
+                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 500, color: "var(--trading-text-muted)" }}>
+                        {selectedStrikes.length}/{sessionType === "mixed" ? 20 : 10} selected
+                      </span>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(70px, 1fr))", gap: 6, maxHeight: 120, overflowY: "auto", paddingRight: 4 }}>
+                      {(chainData?.strikes || []).map((s: any) => {
+                        const ceSelected = selectedStrikes.includes(s.CE);
+                        const peSelected = selectedStrikes.includes(s.PE);
+                        return (
+                          <div key={s.strikePrice} className="m2-strike-chip">
+                            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 10, fontWeight: 600, color: "var(--trading-text-muted)", marginBottom: 5 }}>{s.strikePrice}</span>
+                            <div style={{ display: "flex", gap: 3, width: "100%" }}>
+                              {sessionType !== "PE" && (
+                                <button onClick={() => toggleStrikeSelection(s.CE)} className={`m2-ce-btn${ceSelected ? " active" : ""}`}>CE</button>
+                              )}
+                              {sessionType !== "CE" && (
+                                <button onClick={() => toggleStrikeSelection(s.PE)} className={`m2-pe-btn${peSelected ? " active" : ""}`}>PE</button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   <button
-                    onClick={() => setIsConfigExpanded(false)}
-                    style={{
-                      background: "rgba(4,120,87,0.08)", border: "none", color: GREEN,
-                      fontWeight: 700, fontSize: 11, cursor: "pointer", padding: "4px 10px", borderRadius: 5
-                    }}
+                    className="m2-cta"
+                    onClick={() => startSessionMutation.mutate()}
+                    disabled={selectedStrikes.length === 0 || startSessionMutation.isPending}
                   >
-                    Hide Config ▲
+                    {startSessionMutation.isPending ? "Initialising Session…" : "Start Active Session Tracker"}
                   </button>
-                )}
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 20 }}>
-                <SelectField
-                  label="Index Symbol" value={indexSymbol} onChange={setIndexSymbol}
-                  options={[
-                    { value: "NIFTY50",   label: "NIFTY 50 (Step 50)" },
-                    { value: "BANKNIFTY", label: "BANK NIFTY (Step 100)" },
-                    { value: "FINNIFTY",  label: "FIN NIFTY (Step 50)" },
-                  ]}
-                />
-                <SelectField
-                  label="Options Expiry" value={expiryDate} onChange={setExpiryDate}
-                  options={[
-                    { value: "2026-06-04", label: "04-JUN-2026 (Weekly)" },
-                    { value: "2026-06-11", label: "11-JUN-2026 (Weekly)" },
-                    { value: "2026-06-25", label: "25-JUN-2026 (Monthly)" },
-                  ]}
-                />
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <label style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 600, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                    Session Type
-                  </label>
-                  <SegmentedControl
-                    options={[{ key: "CE" as const, label: "CE" }, { key: "PE" as const, label: "PE" }, { key: "mixed" as const, label: "Mixed" }]}
-                    value={sessionType} onChange={setSessionType}
-                  />
                 </div>
-              </div>
+              ) : (
+                isSplit && (
+                  <div
+                    className="m2-section"
+                    style={{
+                      background: "var(--trading-surface)", border: "1.5px solid var(--trading-border)",
+                      borderRadius: 10, padding: "10px 16px",
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      boxShadow: "0 1px 4px rgba(0,0,0,0.04)", cursor: "pointer",
+                    }}
+                    onClick={() => setIsConfigExpanded(true)}
+                  >
+                    <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      ⚙️ Configure Session & Strikes
+                    </span>
+                    <span style={{ color: GREEN, fontWeight: 700, fontSize: 11, background: "rgba(4,120,87,0.08)", padding: "4px 10px", borderRadius: 5 }}>
+                      Show Config ▼
+                    </span>
+                  </div>
+                )
+              )}
 
-              {/* Strike selection */}
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                  <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                    Select Strikes
-                  </span>
-                  <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 500, color: "var(--trading-text-muted)" }}>
-                    {selectedStrikes.length}/{sessionType === "mixed" ? 20 : 10} selected
-                  </span>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(70px, 1fr))", gap: 6, maxHeight: 120, overflowY: "auto", paddingRight: 4 }}>
-                  {(chainData?.strikes || []).map((s: any) => {
-                    const ceSelected = selectedStrikes.includes(s.CE);
-                    const peSelected = selectedStrikes.includes(s.PE);
-                    return (
-                      <div key={s.strikePrice} className="m2-strike-chip">
-                        <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 10, fontWeight: 600, color: "var(--trading-text-muted)", marginBottom: 5 }}>{s.strikePrice}</span>
-                        <div style={{ display: "flex", gap: 3, width: "100%" }}>
-                          {sessionType !== "PE" && (
-                            <button onClick={() => toggleStrikeSelection(s.CE)} className={`m2-ce-btn${ceSelected ? " active" : ""}`}>CE</button>
-                          )}
-                          {sessionType !== "CE" && (
-                            <button onClick={() => toggleStrikeSelection(s.PE)} className={`m2-pe-btn${peSelected ? " active" : ""}`}>PE</button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <button
-                className="m2-cta"
-                onClick={() => startSessionMutation.mutate()}
-                disabled={selectedStrikes.length === 0 || startSessionMutation.isPending}
-              >
-                {startSessionMutation.isPending ? "Initialising Session…" : "Start Active Session Tracker"}
-              </button>
-            </div>
-          ) : (
-            isSplit && (
+              {/* Toolbar */}
               <div
                 className="m2-section"
                 style={{
                   background: "var(--trading-surface)", border: "1.5px solid var(--trading-border)",
-                  borderRadius: 10, padding: "10px 16px",
-                  display: "flex", justifyContent: "space-between", alignItems: "center",
-                  boxShadow: "0 1px 4px rgba(0,0,0,0.04)", cursor: "pointer",
+                  borderRadius: 14, padding: "12px 16px",
+                  boxShadow: "0 1px 8px rgba(0,0,0,0.05)", animationDelay: "0.08s",
                 }}
-                onClick={() => setIsConfigExpanded(true)}
               >
-                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                  ⚙️ Configure Session & Strikes
-                </span>
-                <span style={{ color: GREEN, fontWeight: 700, fontSize: 11, background: "rgba(4,120,87,0.08)", padding: "4px 10px", borderRadius: 5 }}>
-                  Show Config ▼
-                </span>
-              </div>
-            )
-          )}
-
-          {/* Toolbar */}
-          <div
-            className="m2-section"
-            style={{
-              background: "var(--trading-surface)", border: "1.5px solid var(--trading-border)",
-              borderRadius: 14, padding: "12px 16px",
-              boxShadow: "0 1px 8px rgba(0,0,0,0.05)", animationDelay: "0.08s",
-            }}
-          >
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {/* Row 1: Primary Tab Control & Toggle */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Strikes:</span>
-                  <SegmentedControl
-                    options={[{ key: "mixed" as const, label: "All" }, { key: "CE" as const, label: "CE" }, { key: "PE" as const, label: "PE" }]}
-                    value={filterType} onChange={setFilterType} size="xs"
-                  />
-                </div>
-                {isSplit && (
-                  <button
-                    onClick={() => setIsAdvancedFiltersExpanded(!isAdvancedFiltersExpanded)}
-                    style={{
-                      background: "rgba(4,120,87,0.08)", border: "none", color: GREEN,
-                      fontWeight: 700, fontSize: 11, cursor: "pointer", padding: "6px 12px", borderRadius: 6,
-                      transition: "all 0.15s"
-                    }}
-                  >
-                    {isAdvancedFiltersExpanded ? "Hide Filters ▲" : "Show Filters & Export ▼"}
-                  </button>
-                )}
-              </div>
-
-              {/* Row 2: Advanced filters (always visible if not split, toggleable if split) */}
-              {(!isSplit || isAdvancedFiltersExpanded) && (
-                <div
-                  style={{
-                    display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10,
-                    paddingTop: 10, borderTop: isSplit ? "1.5px solid var(--trading-border)" : "none",
-                    animation: "m2-enter 0.2s ease both"
-                  }}
-                >
-                  <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, flex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.02em" }}>Sort:</span>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {/* Row 1: Primary Tab Control & Toggle */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Strikes:</span>
                       <SegmentedControl
-                        options={[{ key: "default" as const, label: "Default" }, { key: "high_value" as const, label: "High ↓" }, { key: "low_value" as const, label: "Low ↑" }]}
-                        value={sortOrder} onChange={setSortOrder} size="xs"
+                        options={[{ key: "mixed" as const, label: "All" }, { key: "CE" as const, label: "CE" }, { key: "PE" as const, label: "PE" }]}
+                        value={filterType} onChange={setFilterType} size="xs"
                       />
                     </div>
-                    <div style={{ width: 1, height: 22, background: "var(--trading-border)" }} />
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 500, color: "var(--trading-text-muted)" }}>Above</span>
-                      <input type="number" placeholder="Min" value={priceAbove} onChange={(e) => setPriceAbove(e.target.value === "" ? "" : Number(e.target.value))} className="m2-input" style={{ width: 70 }} />
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 500, color: "var(--trading-text-muted)" }}>Below</span>
-                      <input type="number" placeholder="Max" value={priceBelow} onChange={(e) => setPriceBelow(e.target.value === "" ? "" : Number(e.target.value))} className="m2-input" style={{ width: 70 }} />
-                    </div>
-                    <div style={{ width: 1, height: 22, background: "var(--trading-border)" }} />
-                    <FilterChip label="Call-Down" active={callDownCollapsedToggle} onClick={() => setCallDownCollapsedToggle(!callDownCollapsedToggle)} color={RED} />
-                    <FilterChip label="Top 3" active={highlightTop3} onClick={() => setHighlightTop3(!highlightTop3)} color={AMBER} />
-                    <button className="m2-reset" onClick={() => { setSortOrder("default"); setPriceAbove(""); setPriceBelow(""); setHighlightTop3(false); setCallDownCollapsedToggle(false); setFilterType(isSplit ? "CE" : "mixed"); }}>
-                      Reset
-                    </button>
+                    {isSplit && (
+                      <button
+                        onClick={() => setIsAdvancedFiltersExpanded(!isAdvancedFiltersExpanded)}
+                        style={{
+                          background: "rgba(4,120,87,0.08)", border: "none", color: GREEN,
+                          fontWeight: 700, fontSize: 11, cursor: "pointer", padding: "6px 12px", borderRadius: 6,
+                          transition: "all 0.15s"
+                        }}
+                      >
+                        {isAdvancedFiltersExpanded ? "Hide Filters ▲" : "Show Filters & Export ▼"}
+                      </button>
+                    )}
                   </div>
-                  <button className="m2-export" onClick={handleExportCSV}>Export CSV</button>
+
+                  {/* Row 2: Advanced filters (always visible if not split, toggleable if split) */}
+                  {(!isSplit || isAdvancedFiltersExpanded) && (
+                    <div
+                      style={{
+                        display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10,
+                        paddingTop: 10, borderTop: isSplit ? "1.5px solid var(--trading-border)" : "none",
+                        animation: "m2-enter 0.2s ease both"
+                      }}
+                    >
+                      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.02em" }}>Sort:</span>
+                          <SegmentedControl
+                            options={[{ key: "default" as const, label: "Default" }, { key: "high_value" as const, label: "High ↓" }, { key: "low_value" as const, label: "Low ↑" }]}
+                            value={sortOrder} onChange={setSortOrder} size="xs"
+                          />
+                        </div>
+                        <div style={{ width: 1, height: 22, background: "var(--trading-border)" }} />
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 500, color: "var(--trading-text-muted)" }}>Above</span>
+                          <input type="number" placeholder="Min" value={priceAbove} onChange={(e) => setPriceAbove(e.target.value === "" ? "" : Number(e.target.value))} className="m2-input" style={{ width: 70 }} />
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 500, color: "var(--trading-text-muted)" }}>Below</span>
+                          <input type="number" placeholder="Max" value={priceBelow} onChange={(e) => setPriceBelow(e.target.value === "" ? "" : Number(e.target.value))} className="m2-input" style={{ width: 70 }} />
+                        </div>
+                        <div style={{ width: 1, height: 22, background: "var(--trading-border)" }} />
+                        <FilterChip label="Call-Down" active={callDownCollapsedToggle} onClick={() => setCallDownCollapsedToggle(!callDownCollapsedToggle)} color={RED} />
+                        <FilterChip label="Top 3" active={highlightTop3} onClick={() => setHighlightTop3(!highlightTop3)} color={AMBER} />
+                        <button className="m2-reset" onClick={() => { setSortOrder("default"); setPriceAbove(""); setPriceBelow(""); setHighlightTop3(false); setCallDownCollapsedToggle(false); setFilterType(isSplit ? "CE" : "mixed"); }}>
+                          Reset
+                        </button>
+                      </div>
+                      <button className="m2-export" onClick={handleExportCSV}>Export CSV</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* CE Table */}
+              {(filterType === "mixed" || filterType === "CE") && (
+                <div className="m2-section" style={{ animationDelay: "0.1s" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: GREEN, display: "inline-block" }} />
+                    <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: GREEN, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                      CE Strikes
+                    </span>
+                  </div>
+                  <StrikeTrackerTable strikesList={ceStrikesList} session={currentSession} sortedTimestamps={sortedTimestamps} highlightTop3={highlightTop3} topStrikes={topStrikes} isSplit={isSplit} isClosed={isClosed} />
                 </div>
               )}
-            </div>
-          </div>
 
-          {/* CE Table */}
-          {(filterType === "mixed" || filterType === "CE") && (
-            <div className="m2-section" style={{ animationDelay: "0.1s" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                <span style={{ width: 8, height: 8, borderRadius: "50%", background: GREEN, display: "inline-block" }} />
-                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: GREEN, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                  CE Strikes
-                </span>
-              </div>
-              <StrikeTrackerTable strikesList={ceStrikesList} session={currentSession} sortedTimestamps={sortedTimestamps} highlightTop3={highlightTop3} topStrikes={topStrikes} isSplit={isSplit} />
-            </div>
-          )}
-
-          {/* PE Table */}
-          {(filterType === "mixed" || filterType === "PE") && (
-            <div className="m2-section" style={{ animationDelay: "0.13s" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                <span style={{ width: 8, height: 8, borderRadius: "50%", background: RED, display: "inline-block" }} />
-                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: RED, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                  PE Strikes
-                </span>
-              </div>
-              <StrikeTrackerTable strikesList={peStrikesList} session={currentSession} sortedTimestamps={sortedTimestamps} highlightTop3={highlightTop3} topStrikes={topStrikes} isSplit={isSplit} />
-            </div>
-          )}
+              {/* PE Table */}
+              {(filterType === "mixed" || filterType === "PE") && (
+                <div className="m2-section" style={{ animationDelay: "0.13s" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: RED, display: "inline-block" }} />
+                    <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: RED, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                      PE Strikes
+                    </span>
+                  </div>
+                  <StrikeTrackerTable strikesList={peStrikesList} session={currentSession} sortedTimestamps={sortedTimestamps} highlightTop3={highlightTop3} topStrikes={topStrikes} isSplit={isSplit} isClosed={isClosed} />
+                </div>
+              )}
+            </>
 
         </div>
       </div>
@@ -636,9 +628,9 @@ export const Module2 = ({ isSplit = false }: { isSplit?: boolean }) => {
 };
 
 // ── StrikeTrackerTable ────────────────────────────────────────────────────────
-function StrikeTrackerTable({ strikesList, session, sortedTimestamps, highlightTop3, topStrikes, isSplit = false }: {
+function StrikeTrackerTable({ strikesList, session, sortedTimestamps, highlightTop3, topStrikes, isSplit = false, isClosed = false }: {
   strikesList: string[]; session: any; sortedTimestamps: string[];
-  highlightTop3: boolean; topStrikes: string[]; isSplit?: boolean;
+  highlightTop3: boolean; topStrikes: string[]; isSplit?: boolean; isClosed?: boolean;
 }) {
   const [showFullColumns, setShowFullColumns] = useState(false);
   const cellPadding = isSplit ? "12px 14px" : "12px 16px";
@@ -685,7 +677,13 @@ function StrikeTrackerTable({ strikesList, session, sortedTimestamps, highlightT
             </tr>
           </thead>
           <tbody>
-            {displayedStrikes.length === 0 ? (
+            {isClosed ? (
+              <tr>
+                <td colSpan={displayedTimestamps.length + (isSplit && !showFullColumns ? 1 : 4)} style={{ padding: "48px 16px", textAlign: "center", fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#E53935", fontWeight: 700 }}>
+                  Market Closed
+                </td>
+              </tr>
+            ) : displayedStrikes.length === 0 ? (
               <tr>
                 <td colSpan={displayedTimestamps.length + (isSplit && !showFullColumns ? 1 : 4)} style={{ padding: "32px 16px", textAlign: "center", fontFamily: "'Inter', sans-serif", fontSize: 13, color: "var(--trading-text-muted)" }}>
                   No strikes to display in this category.

@@ -4,6 +4,9 @@ import { getZebuOAuthMissingConfig, resolveZebuSessionToken } from "./zebuOAuthS
 
 type DataSource = "LIVE_MARKET_API" | "SIMULATOR";
 
+let wsConnected = false;
+export const isZebuLiveConnected = () => wsConnected;
+
 interface ZebuInstrument {
   key: string;
   exchange: string;
@@ -58,6 +61,7 @@ const parseInstrumentEnv = (value?: string): ZebuInstrument[] => {
 };
 
 const getModule1ZebuInstruments = () => [
+  ...parseInstrumentEnv(process.env.ZEBU_NIFTY_SPOT_TOKEN || "NSE|26000:NIFTY-SPOT"),
   ...parseInstrumentEnv(process.env.ZEBU_NIFTY_FUT_TOKEN),
   ...parseInstrumentEnv(process.env.ZEBU_NIFTY_CE_TOKENS),
   ...parseInstrumentEnv(process.env.ZEBU_NIFTY_PE_TOKENS),
@@ -70,8 +74,17 @@ export const getZebuMissingConfig = () => {
 
   if (!/^wss?:\/\//.test(wsUrl) || isPlaceholder(wsUrl)) missing.push("ZEBU_WS_URL or CLIENT_API_URL");
   if (isPlaceholder(getZebuUserId())) missing.push("ZEBU_CLIENT_ID or ZEBU_USER_ID");
-  if (isPlaceholder(getZebuSessionToken()) && getZebuOAuthMissingConfig().length > 0) {
-    missing.push("ZEBU_SUSERTOKEN/ZEBU_SESSION_TOKEN or complete Zebu OAuth config");
+  
+  const hasDirectAuth = !isPlaceholder(process.env.ZEBU_PASSWORD) &&
+                        !isPlaceholder(process.env.ZEBU_FACTOR2) &&
+                        !isPlaceholder(process.env.ZEBU_VENDOR_CODE) &&
+                        !isPlaceholder(process.env.ZEBU_LOGIN_URL);
+  
+  const hasToken = !isPlaceholder(getZebuSessionToken());
+  const hasOAuth = getZebuOAuthMissingConfig().length === 0;
+
+  if (!hasToken && !hasDirectAuth && !hasOAuth) {
+    missing.push("ZEBU_SUSERTOKEN/ZEBU_SESSION_TOKEN, QuickAuth credentials, or complete Zebu OAuth config");
   }
   if (isPlaceholder(process.env.MOD1_API_KEY)) missing.push("MOD1_API_KEY");
   if (isPlaceholder(process.env.MOD1_API_SECRET)) missing.push("MOD1_API_SECRET");
@@ -129,6 +142,7 @@ export const startZebuMarketDataFeed = (
   let liveConnected = false;
 
   ws.on("open", async () => {
+    wsConnected = true;
     let sessionToken: string | null = null;
     try {
       sessionToken = await resolveZebuSessionToken();
@@ -175,12 +189,14 @@ export const startZebuMarketDataFeed = (
   });
 
   ws.on("close", () => {
+    wsConnected = false;
     const reason = liveConnected ? "live feed closed" : "live feed closed before connection";
     onDataSource("SIMULATOR");
     onFallback(reason);
   });
 
   ws.on("error", () => {
+    wsConnected = false;
     onDataSource("SIMULATOR");
     onFallback("live feed connection error");
   });
