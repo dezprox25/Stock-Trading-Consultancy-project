@@ -6,6 +6,7 @@ import { Watchlist } from "../models/Watchlist";
 import { RegisterSchema, LoginSchema } from "@stock/shared";
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from "../utils/token";
 import redis from "../config/redis";
+import { AuthenticatedRequest } from "../middleware/auth";
 
 // Helper to parse cookies manually from raw header
 const getCookie = (req: Request, name: string): string | null => {
@@ -228,6 +229,39 @@ export const logout = async (req: Request, res: Response) => {
     return res.status(200).json({ message: "Logged out successfully" });
   } catch (error) {
     console.error("Logout Error:", error);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+// GET /api/auth/me
+export const me = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    let user = null;
+    try {
+      user = await User.findById(userId);
+    } catch (dbErr) {
+      console.warn("[Auth] MongoDB offline. Finding user in-memory for me.");
+      user = inMemoryUsers.get(userId);
+    }
+
+    if (!user || user.status === "inactive") {
+      return res.status(404).json({ error: "User not found or inactive" });
+    }
+
+    return res.status(200).json({
+      user: {
+        id: user._id,
+        username: user.username,
+        name: user.name || user.username,
+      },
+    });
+  } catch (error) {
+    console.error("Get Me Error:", error);
     return res.status(500).json({ error: "Internal Server Error" });
   }
 };

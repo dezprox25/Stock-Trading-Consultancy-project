@@ -5,6 +5,24 @@ import redis from "../config/redis";
 let sessionToken: string | null = null;
 let userID: string | null = null;
 let socket: Socket | null = null;
+let socketConnected = false;
+
+export const isAetramConnected = (): "CONNECTED" | "ERROR" | "WAITING_FOR_CONFIGURATION" => {
+  const apiKey = getApiKey();
+  const apiSecret = getApiSecret();
+  const authUrl = getAuthUrl();
+  const baseUrl = getBaseUrl();
+
+  if (isPlaceholder(apiKey) || isPlaceholder(apiSecret) || !authUrl || !baseUrl) {
+    return "WAITING_FOR_CONFIGURATION";
+  }
+
+  if (sessionToken && socketConnected) {
+    return "CONNECTED";
+  }
+
+  return "ERROR";
+};
 
 // Caches for symbol mapping
 const symbolToTokenMap = new Map<string, { segment: number; token: string }>();
@@ -244,10 +262,12 @@ export const connectToAetramWebSocket = async (): Promise<boolean> => {
   });
 
   socket.on("connect", () => {
+    socketConnected = true;
     console.log("[AetramMD] Socket.IO feed connected successfully.");
   });
 
   socket.on("connect_error", (error) => {
+    socketConnected = false;
     console.error("[AetramMD] Socket connection error:", error);
   });
 
@@ -258,6 +278,7 @@ export const connectToAetramWebSocket = async (): Promise<boolean> => {
   socket.on("1510-json-partial", handleOiTick);
 
   socket.on("disconnect", (reason) => {
+    socketConnected = false;
     console.warn(`[AetramMD] Socket disconnected: ${reason}`);
   });
 

@@ -6,6 +6,7 @@ import { useStore } from "./store/useStore";
 import { api } from "./utils/api";
 import { Module1 } from "./components/Module1";
 import { Module2 } from "./components/Module2";
+import { Auth } from "./components/Auth";
 import { PanelLeftClose, PanelLeftOpen, Columns } from "lucide-react";
 
 
@@ -298,10 +299,12 @@ function MobileTabs() {
 
 // ── Root app ──────────────────────────────────────────────────────────────────
 function App() {
-  const user = useStore((s) => s.user) || { name: "Sasikala P", id: "guest" };
+  const user = useStore((s) => s.user);
+  const accessToken = useStore((s) => s.accessToken);
   const setAuth = useStore((s) => s.setAuth);
   const clearAuth = useStore((s) => s.clearAuth);
 
+  const isAuthenticated = !!accessToken;
   const [isInitializing, setIsInitializing] = useState(true);
 
   const navigate = useNavigate();
@@ -312,7 +315,14 @@ function App() {
     queryKey: ["market-status"],
     queryFn: () => api.get("/api/market/status"),
     refetchInterval: 15000,
-    enabled: !!user,
+    enabled: isAuthenticated,
+  });
+
+  const { data: moduleStatus } = useQuery<{ module1: string; module2: string }>({
+    queryKey: ["module-status"],
+    queryFn: () => api.get("/api/module/status"),
+    refetchInterval: 10000,
+    enabled: isAuthenticated,
   });
 
   const isMarketClosed = marketStatus?.status === "CLOSED";
@@ -345,19 +355,6 @@ function App() {
           if (data.accessToken && data.user) {
             setAuth(data.user, data.accessToken);
           }
-        } else {
-          // Auto-login as guest user for seamless dev experience since login page is bypassed
-          const loginRes = await fetch("/auth/login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username: "guest", password: "password123" }),
-          });
-          if (loginRes.ok) {
-            const loginData = await loginRes.json();
-            if (loginData.accessToken && loginData.user) {
-              setAuth(loginData.user, loginData.accessToken);
-            }
-          }
         }
       } catch (err) {
         console.warn("[App] Silent auth refresh failed:", err);
@@ -387,7 +384,14 @@ function App() {
     );
   }
 
-  // Login page bypassed
+  if (!isAuthenticated) {
+    return (
+      <Routes>
+        <Route path="/login" element={<Auth />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
+  }
 
   return (
     <>
@@ -431,6 +435,105 @@ function App() {
               <NavigationLink to="/dashboard/module-2" label="Module 2 – Strike Tracker" icon="M2" />
               <NavigationLink to="/dashboard/split-view" label="Split View – Multi-Panel" icon="🖥️" />
             </nav>
+
+            {/* Module Status Panel */}
+            <div
+              style={{
+                padding: "16px 20px",
+                borderTop: "1.5px solid var(--trading-border)",
+                background: "rgba(248, 250, 252, 0.5)",
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+              }}
+            >
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 9, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.15em" }}>
+                Module Connection Status
+              </div>
+
+              {/* Module 1 (Zebu) */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, color: "var(--trading-text-active)" }}>
+                  Module 1 (Zebu)
+                </span>
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: 11,
+                    fontWeight: 800,
+                    color: moduleStatus?.module1 === "CONNECTED" ? GREEN : "var(--trading-bearish)",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: "50%",
+                      background: moduleStatus?.module1 === "CONNECTED" ? GREEN : "var(--trading-bearish)",
+                      boxShadow: moduleStatus?.module1 === "CONNECTED" ? `0 0 0 2px rgba(4,120,87,0.2)` : `0 0 0 2px rgba(239,68,68,0.2)`,
+                    }}
+                  />
+                  {moduleStatus?.module1 === "CONNECTED" ? "Connected" : "Disconnected"}
+                </span>
+              </div>
+
+              {/* Module 2 (Aetram) */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, color: "var(--trading-text-active)" }}>
+                  Module 2 (Aetram)
+                </span>
+                {(() => {
+                  const m2 = moduleStatus?.module2 || "WAITING_FOR_CONFIGURATION";
+                  let badgeColor = "var(--trading-divergence)";
+                  let badgeText = "Waiting Config";
+                  let dotColor = "var(--trading-divergence)";
+                  let shadowColor = "rgba(249, 115, 22, 0.2)";
+
+                  if (m2 === "CONNECTED") {
+                    badgeColor = GREEN;
+                    badgeText = "Connected";
+                    dotColor = GREEN;
+                    shadowColor = "rgba(4, 120, 87, 0.2)";
+                  } else if (m2 === "ERROR") {
+                    badgeColor = "var(--trading-bearish)";
+                    badgeText = "Error";
+                    dotColor = "var(--trading-bearish)";
+                    shadowColor = "rgba(239, 68, 68, 0.2)";
+                  } else {
+                    badgeColor = "#D97706"; // Amber 600
+                    badgeText = "Waiting Config";
+                    dotColor = "#D97706";
+                    shadowColor = "rgba(217, 119, 6, 0.2)";
+                  }
+
+                  return (
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        fontSize: 11,
+                        fontWeight: 800,
+                        color: badgeColor,
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 7,
+                          height: 7,
+                          borderRadius: "50%",
+                          background: dotColor,
+                          boxShadow: `0 0 0 2px ${shadowColor}`,
+                        }}
+                      />
+                      {badgeText}
+                    </span>
+                  );
+                })()}
+              </div>
+            </div>
           </div>
         </aside>
 
@@ -463,6 +566,10 @@ function App() {
                   </div>
                 }
               />
+              <Route path="/module1" element={<Navigate to="/dashboard/module-1" replace />} />
+              <Route path="/module2" element={<Navigate to="/dashboard/module-2" replace />} />
+              <Route path="/split-view" element={<Navigate to="/dashboard/split-view" replace />} />
+              <Route path="/login" element={<Navigate to="/dashboard/module-1" replace />} />
               <Route path="*" element={<Navigate to="/dashboard/module-1" replace />} />
             </Routes>
           </main>

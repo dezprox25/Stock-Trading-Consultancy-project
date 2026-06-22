@@ -8,6 +8,7 @@ import { getActiveCandle, getCachedOHLCBars } from "../services/ohlcAggregator";
 import { getPivotLevels, evaluateIndicators } from "../services/pivotService";
 import { getLatestModule1OiMetrics } from "../services/module1OiService";
 import { isZebuLiveConnected } from "../services/zebuMarketDataClient";
+import { isAetramConnected } from "../services/aetramMarketDataService";
 
 // Local in-memory watchlists store for when MongoDB is offline
 const inMemoryWatchlists = new Map<string, { symbols: string[]; columnPrefs: any }>();
@@ -346,6 +347,22 @@ export const getMarketStatus = async (req: AuthenticatedRequest, res: Response) 
     });
   } catch (error) {
     console.error("Get Market Status Error:", error);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+// Get connection statuses for both Module 1 (Zebu) and Module 2 (Aetram)
+export const getModuleStatus = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const m1Connected = isZebuLiveConnected();
+    const m2Status = isAetramConnected();
+
+    return res.status(200).json({
+      module1: m1Connected ? "CONNECTED" : "DISCONNECTED",
+      module2: m2Status,
+    });
+  } catch (error) {
+    console.error("Get Module Status Error:", error);
     return res.status(500).json({ error: "Internal Server Error" });
   }
 };

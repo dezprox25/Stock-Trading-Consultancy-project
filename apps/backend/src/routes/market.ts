@@ -11,7 +11,8 @@ import {
   getModule1LatestOi,
   getOptionChain,
   updateCustomTimeframe,
-  getMarketStatus
+  getMarketStatus,
+  getModuleStatus
 } from "../controllers/market";
 
 const router = Router();
@@ -28,6 +29,7 @@ router.get("/market/pivots/:symbol/:tf", authenticate, getPivotLevelsEndpoint);
 router.get("/market/option-chain/:index", authenticate, getOptionChain);
 router.post("/market/custom-timeframe", authenticate, updateCustomTimeframe);
 router.get("/market/status", authenticate, getMarketStatus);
+router.get("/module/status", authenticate, getModuleStatus);
 
 // Module 1 Indicators
 router.get("/module1/indicators/:symbol", authenticate, getIndicatorsEndpoint);
