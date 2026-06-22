@@ -119,24 +119,49 @@ const finaliseCandle = async (candle: Candle) => {
   if (!finalizedCandlesCache[symbol]) finalizedCandlesCache[symbol] = {};
   if (!finalizedCandlesCache[symbol][timeframe]) finalizedCandlesCache[symbol][timeframe] = [];
 
-  finalizedCandlesCache[symbol][timeframe].push(candle);
-  if (finalizedCandlesCache[symbol][timeframe].length > 100) {
-    finalizedCandlesCache[symbol][timeframe].shift();
+  const existingIdx = finalizedCandlesCache[symbol][timeframe].findIndex(c => c.openTime === candle.openTime);
+  if (existingIdx >= 0) {
+    finalizedCandlesCache[symbol][timeframe][existingIdx] = candle;
+  } else {
+    finalizedCandlesCache[symbol][timeframe].push(candle);
+    if (finalizedCandlesCache[symbol][timeframe].length > 15) {
+      finalizedCandlesCache[symbol][timeframe].shift();
+    }
   }
 
   try {
-    await FuturesOHLC.create({
-      symbol: candle.symbol,
-      timeframe: candle.timeframe,
-      bar_open: candle.open,
-      bar_high: candle.high,
-      bar_low: candle.low,
-      bar_close: candle.close,
-      bar_time: new Date(candle.openTime),
-      volume: candle.volume,
-    });
+    await FuturesOHLC.findOneAndUpdate(
+      {
+        symbol: candle.symbol,
+        timeframe: candle.timeframe,
+        bar_time: new Date(candle.openTime),
+      },
+      {
+        bar_open: candle.open,
+        bar_high: candle.high,
+        bar_low: candle.low,
+        bar_close: candle.close,
+        volume: candle.volume,
+      },
+      { upsert: true, new: true }
+    );
 
-    console.log(`[OHLC] Finalized ${candle.timeframe} candle for ${candle.symbol} at ${new Date(candle.openTime).toISOString()}`);
+    console.log(`[OHLC] Finalized/Updated ${candle.timeframe} candle for ${candle.symbol} at ${new Date(candle.openTime).toISOString()}`);
+
+    // Prune the database to keep exactly the latest 15 records
+    const oldestToKeep = await FuturesOHLC.find({ symbol: candle.symbol, timeframe: candle.timeframe })
+      .sort({ bar_time: -1 })
+      .skip(14)
+      .limit(1);
+
+    if (oldestToKeep.length > 0) {
+      const boundaryTime = oldestToKeep[0].bar_time;
+      await FuturesOHLC.deleteMany({
+        symbol: candle.symbol,
+        timeframe: candle.timeframe,
+        bar_time: { $lt: boundaryTime }
+      });
+    }
   } catch (error) {
     console.error("Failed to finalize candle in database:", error);
   }

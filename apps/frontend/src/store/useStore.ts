@@ -46,6 +46,31 @@ interface AppState {
   appendTrackerCell: (strike: string, cell: Module2Cell, stateUpdate: Partial<Module2StrikeState>) => void;
   updateFuturesOI: (futuresOI: any) => void;
 
+  // Module 1 latest metrics state
+  latestOiMetrics: Module1OiMetrics | null;
+  setLatestOiMetrics: (metrics: Module1OiMetrics | null) => void;
+}
+
+export interface Module1OiMetrics {
+  timestamp: string;
+  dataSource?: "LIVE_MARKET_API" | "SIMULATOR";
+  tin: number;
+  c_tl: number;
+  c_mn: number;
+  c_hig: number;
+  c_low: number;
+  c_buy: number;
+  c_sell: number;
+  f_buy: number;
+  f_sell: number;
+  p_tl: number;
+  p_mn: number;
+  p_hig: number;
+  p_low: number;
+  p_buy: number;
+  p_sell: number;
+  callSignal: "STRONG_BULL" | "MILD_BULL" | "NEUTRAL" | "MILD_BEAR" | "STRONG_BEAR" | "DIVERGENCE";
+  putSignal: "STRONG_BULL" | "MILD_BULL" | "NEUTRAL" | "MILD_BEAR" | "STRONG_BEAR" | "DIVERGENCE";
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -53,7 +78,11 @@ export const useStore = create<AppState>((set) => ({
   user: null,
   accessToken: null,
   setAuth: (user, token) => set({ user, accessToken: token }),
-  clearAuth: () => set({ user: null, accessToken: null, activeSession: null }),
+  clearAuth: () => set({ user: null, accessToken: null, activeSession: null, latestOiMetrics: null }),
+
+  // Module 1 metrics
+  latestOiMetrics: null,
+  setLatestOiMetrics: (metrics) => set({ latestOiMetrics: metrics }),
 
   // Watchlist State
   watchlist: ["NIFTY-SPOT", "NIFTY-FUT"],

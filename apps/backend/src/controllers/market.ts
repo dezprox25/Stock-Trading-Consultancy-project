@@ -142,14 +142,28 @@ export const getFuturesData = async (req: AuthenticatedRequest, res: Response) =
 // Get completed OHLC candles from Database
 export const getOHLCBars = async (req: AuthenticatedRequest, res: Response) => {
   const { symbol, tf } = req.params;
-  const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+  const limit = req.query.limit ? parseInt(req.query.limit as string) : 15;
+  const fetchLimit = limit + 1;
 
   try {
     const dbBars = await FuturesOHLC.find({ symbol, timeframe: tf })
       .sort({ bar_time: -1 })
-      .limit(limit);
+      .limit(fetchLimit * 3);
 
-    const bars = dbBars.reverse().map((b) => ({
+    const seenTimes = new Set<number>();
+    const uniqueBars: typeof dbBars = [];
+    for (const b of dbBars) {
+      const timeMs = new Date(b.bar_time).getTime();
+      if (!seenTimes.has(timeMs)) {
+        seenTimes.add(timeMs);
+        uniqueBars.push(b);
+      }
+      if (uniqueBars.length >= fetchLimit) {
+        break;
+      }
+    }
+
+    const bars = uniqueBars.reverse().map((b) => ({
       symbol: b.symbol,
       timeframe: b.timeframe,
       open: b.bar_open,
@@ -163,7 +177,7 @@ export const getOHLCBars = async (req: AuthenticatedRequest, res: Response) => {
     return res.status(200).json(bars);
   } catch (error) {
     console.error("Get OHLC Bars Error, falling back to memory cache:", error);
-    const cachedBars = getCachedOHLCBars(symbol, tf, limit);
+    const cachedBars = getCachedOHLCBars(symbol, tf, fetchLimit);
     return res.status(200).json(cachedBars);
   }
 };

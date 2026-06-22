@@ -2,6 +2,7 @@ import redis from "../config/redis";
 import { aggregateOHLC } from "./ohlcAggregator";
 import { Tick } from "@stock/shared";
 import { ingestModule1OiTick, setModule1OiDataSource } from "./module1OiService";
+import { recordTickReceived } from "./monitoringService";
 import { getZebuMissingConfig, isZebuMarketDataConfigured, startZebuMarketDataFeed } from "./zebuMarketDataClient";
 
 let reconnectTimeout: NodeJS.Timeout | null = null;
@@ -55,6 +56,9 @@ const connectToZebuMarketData = () => {
 export const processIncomingTick = async (tick: Tick) => {
   const { symbol, ltp, oi } = tick;
   
+  // Track tick freshness
+  recordTickReceived();
+
   // 1. Cache latest price in Redis
   await redis.set(`ltp:${symbol}`, ltp.toString());
   

@@ -3,7 +3,6 @@ import { Routes, Route, Navigate, Link, useLocation, useNavigate } from "react-r
 import { useQuery } from "@tanstack/react-query";
 import { useSocket } from "./hooks/useSocket";
 import { useStore } from "./store/useStore";
-import { Auth } from "./components/Auth";
 import { api } from "./utils/api";
 import { Module1 } from "./components/Module1";
 import { Module2 } from "./components/Module2";
@@ -105,7 +104,7 @@ function TopBar({
   }, []);
 
   const timeStr = time.toLocaleTimeString("en-US", {
-    hour12: true, hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit",
   });
 
   const handleCustomTf = async () => {
@@ -345,6 +344,19 @@ function App() {
           const data = await response.json();
           if (data.accessToken && data.user) {
             setAuth(data.user, data.accessToken);
+          }
+        } else {
+          // Auto-login as guest user for seamless dev experience since login page is bypassed
+          const loginRes = await fetch("/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: "guest", password: "password123" }),
+          });
+          if (loginRes.ok) {
+            const loginData = await loginRes.json();
+            if (loginData.accessToken && loginData.user) {
+              setAuth(loginData.user, loginData.accessToken);
+            }
           }
         }
       } catch (err) {

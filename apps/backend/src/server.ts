@@ -21,6 +21,8 @@ import { initDataFeed } from "./services/dataFeed";
 import { initSocketServer } from "./services/socketService";
 import { initTrackerEngine } from "./services/trackerService";
 import { initAetramMarketDataService } from "./services/aetramMarketDataService";
+import { initModule1OiService } from "./services/module1OiService";
+import { startMonitoringLoop, getMonitoringStatus } from "./services/monitoringService";
 
 const app = express();
 const server = http.createServer(app);
@@ -107,13 +109,16 @@ app.get("/health", async (_req, res) => {
     redisStatus = "error";
   }
 
+  const monitoring = await getMonitoringStatus();
+
   res.json({
-    status: "healthy",
+    status: monitoring.status === "OK" ? "healthy" : "warning",
     timestamp: new Date(),
     services: {
       mongodb: mongoStatus,
       redis: redisStatus,
     },
+    monitoring,
   });
 });
 
@@ -179,7 +184,13 @@ const startServer = async () => {
   initSocketServer(io);
   initTrackerEngine();
   initAetramMarketDataService();
+  
+  // Warm up OI cache from Redis before launching live data feed listeners
+  await initModule1OiService();
   initDataFeed();
+
+  // Start feed validation and monitoring check loop
+  startMonitoringLoop();
 
   // Start HTTP / WebSocket Server
   server.listen(PORT, () => {

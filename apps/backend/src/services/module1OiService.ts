@@ -1,4 +1,5 @@
 import { Tick } from "@stock/shared";
+import redis from "../config/redis";
 
 type OiSignal = "STRONG_BULL" | "MILD_BULL" | "NEUTRAL" | "MILD_BEAR" | "STRONG_BEAR" | "DIVERGENCE";
 
@@ -141,9 +142,9 @@ const createOrUpdateLatestRow = (timestamp: Date) => {
 export const ingestModule1OiTick = (tick: Tick) => {
   if (tick.oi === undefined || Number.isNaN(tick.oi)) return;
 
-  if (tick.symbol.endsWith("CE")) {
+  if (tick.symbol.endsWith("CE") || /C\d+$/.test(tick.symbol)) {
     ceOiBySymbol.set(tick.symbol, tick.oi);
-  } else if (tick.symbol.endsWith("PE")) {
+  } else if (tick.symbol.endsWith("PE") || /P\d+$/.test(tick.symbol)) {
     peOiBySymbol.set(tick.symbol, tick.oi);
   } else if (tick.symbol.endsWith("-FUT") || tick.symbol.includes("FUT")) {
     latestFuturesOi = tick.oi;
@@ -159,4 +160,33 @@ export const getLatestModule1OiMetrics = (): Module1OiMetrics => {
 
   createOrUpdateLatestRow(new Date());
   return latestRow!;
+};
+
+/**
+ * Warm up the in-memory CE/PE/Futures maps using last cached values in Redis
+ */
+export const initModule1OiService = async () => {
+  try {
+    const keys = await redis.keys("oi:*");
+    for (const key of keys) {
+      const val = await redis.get(key);
+      if (val) {
+        const symbol = key.replace("oi:", "");
+        const oi = parseInt(val);
+        if (!isNaN(oi)) {
+          if (symbol.endsWith("CE") || /C\d+$/.test(symbol)) {
+            ceOiBySymbol.set(symbol, oi);
+          } else if (symbol.endsWith("PE") || /P\d+$/.test(symbol)) {
+            peOiBySymbol.set(symbol, oi);
+          } else if (symbol.endsWith("-FUT") || symbol.includes("FUT")) {
+            latestFuturesOi = oi;
+          }
+        }
+      }
+    }
+    console.log(`[Module1OiService] Loaded ${ceOiBySymbol.size} CE and ${peOiBySymbol.size} PE options from Redis cache on start.`);
+    createOrUpdateLatestRow(new Date());
+  } catch (err) {
+    console.warn("[Module1OiService] Redis warmup warning:", err);
+  }
 };

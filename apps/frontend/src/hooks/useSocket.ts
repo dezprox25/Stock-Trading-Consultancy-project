@@ -11,6 +11,7 @@ export const useSocket = () => {
   const setIndicators = useStore((state) => state.setIndicators);
   const appendTrackerCell = useStore((state) => state.appendTrackerCell);
   const updateFuturesOI = useStore((state) => state.updateFuturesOI);
+  const setLatestOiMetrics = useStore((state) => state.setLatestOiMetrics);
 
   const selectedSymbol = useStore((state) => state.selectedSymbol);
   const selectedTimeframe = useStore((state) => state.selectedTimeframe);
@@ -69,6 +70,11 @@ export const useSocket = () => {
     // Handle indicator (Call/Put signal) updates
     socket.on("indicators", (signal: Module1Indicators) => {
       setIndicators(signal.symbol, selectedTimeframe, selectedMethod, signal);
+    });
+
+    // Handle real-time latest OI metrics updates
+    socket.on("latest-oi", (metrics: any) => {
+      setLatestOiMetrics(metrics);
     });
 
     socket.on(

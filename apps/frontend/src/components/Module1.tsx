@@ -55,7 +55,7 @@ function PriceCard({ label, value, flash, sub }: { label: string; value: number;
           letterSpacing: "-0.02em", lineHeight: 1, transition: "color 0.3s",
         }}
       >
-        {value > 0 ? value.toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : "—"}
+        {value > 0 ? value.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : "—"}
         {flash && (
           <span style={{ fontSize: 13, marginLeft: 5, color: flashColor }}>
             {flash === "up" ? "▲" : "▼"}
@@ -77,37 +77,28 @@ type OiMetric = { label: string; value: number | null; tone: OiMetricTone };
 const formatFullOiValue = (value: number | null) =>
   value === null
     ? "-"
-    : value.toLocaleString("en-IN", {
+    : value.toLocaleString("en-US", {
         minimumFractionDigits: Number.isInteger(value) ? 0 : 1,
         maximumFractionDigits: 1,
       });
 
 const formatCompactOiValue = (value: number | null) => {
-  if (value === null) return "-";
-  if (Math.abs(value) < 1_000_000) return formatFullOiValue(value);
-
-  return value.toLocaleString("en-IN", {
-    notation: "compact",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 1,
-  });
+  return formatFullOiValue(value);
 };
 
 const formatTableOiValue = (value: number | null) => {
-  if (value === null) return "-";
-
-  const absValue = Math.abs(value);
-  const sign = value < 0 ? "-" : "";
-  const compact = (divisor: number, suffix: string) =>
-    `${sign}${(absValue / divisor).toLocaleString("en-IN", {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: absValue / divisor >= 10 ? 0 : 1,
-    })}${suffix}`;
-
-  if (absValue >= 10_000_000) return compact(10_000_000, "Cr");
-  if (absValue >= 100_000) return compact(100_000, "L");
-  if (absValue >= 1_000) return compact(1_000, "K");
   return formatFullOiValue(value);
+};
+
+const formatTimestampToHms = (timestampStr: string | undefined | null) => {
+  if (!timestampStr) return "—";
+  try {
+    const date = new Date(timestampStr);
+    if (isNaN(date.getTime())) return "—";
+    return date.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  } catch (e) {
+    return "—";
+  }
 };
 
 const getSignalShortLabel = (signal: OiSignal) => {
@@ -136,17 +127,20 @@ function OiMetricCard({ label, value, tone }: { label: string; value: number | n
     <div
       title={`${label}: ${fullValue}`}
       style={{
-        display: "flex", flexDirection: "column", gap: 6,
-        padding: "12px 14px", borderRadius: 10,
+        display: "flex", flexDirection: "column", gap: 4,
+        padding: "10px 12px", borderRadius: 10,
         background: styles.bg, border: styles.border,
         minWidth: 0,
+        alignItems: "center",
+        justifyContent: "center",
+        textAlign: "center",
         boxShadow: "0 1px 6px rgba(0,0,0,0.04)",
       }}
     >
-      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: styles.text }}>
+      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: styles.text }}>
         {label}
       </span>
-      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 16, fontWeight: 900, color: styles.text, letterSpacing: 0, lineHeight: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>
+      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, fontWeight: 800, color: styles.text, letterSpacing: "-0.01em", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>
         {formattedValue}
       </span>
     </div>
@@ -203,6 +197,17 @@ function SignalCard({ title, signal, icon }: { title: string; signal: OiSignal; 
   );
 }
 
+const getTimeframeMins = (tf: string): number => {
+  if (tf === "1m") return 1;
+  if (tf === "3m") return 3;
+  if (tf === "5m") return 5;
+  if (tf.endsWith("m")) {
+    const m = parseInt(tf);
+    return isNaN(m) ? 5 : m;
+  }
+  return 5;
+};
+
 // ── Module 1 ──────────────────────────────────────────────────────────────────
 export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
   const [showFullGrid, setShowFullGrid] = useState(false);
@@ -210,13 +215,7 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
   const selectedTimeframe = useStore((s) => s.selectedTimeframe);
   const prices = useStore((s) => s.prices);
 
-  const { data: marketStatus } = useQuery<{ status: "LIVE" | "CLOSED" }>({
-    queryKey: ["market-status"],
-    queryFn: () => api.get("/api/market/status"),
-    refetchInterval: 15000,
-  });
 
-  const isClosed = marketStatus?.status === "CLOSED";
 
   const prevFutRef = useRef<number>(0);
   const prevSpotRef = useRef<number>(0);
@@ -250,16 +249,94 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
     enabled: !!selectedSymbol,
   });
 
-  const { data: latestOiMetrics } = useQuery<Module1OiMetricsResponse | null>({
-    queryKey: ["module1-latest-oi"],
-    queryFn: getModule1LatestMetrics,
+  const latestOiMetrics = useStore((s) => s.latestOiMetrics);
+
+  // Fetch initial spot and futures prices on mount
+  useQuery({
+    queryKey: ["initial-spot-price"],
+    queryFn: async () => {
+      try {
+        const res = await api.get("/api/market/spot/NIFTY-SPOT");
+        if (res && res.ltp) {
+          useStore.getState().updatePrice("NIFTY-SPOT", res.ltp);
+        }
+      } catch (err) {
+        console.warn("Failed to fetch initial spot price:", err);
+      }
+      return null;
+    },
+    refetchInterval: 10000, // Fallback polling
+  });
+
+  useQuery({
+    queryKey: ["initial-futures-price", selectedSymbol],
+    queryFn: async () => {
+      try {
+        const res = await api.get(`/api/market/futures/${selectedSymbol}`);
+        if (res && res.ltp) {
+          useStore.getState().updatePrice(selectedSymbol, res.ltp);
+        }
+      } catch (err) {
+        console.warn("Failed to fetch initial futures price:", err);
+      }
+      return null;
+    },
+    enabled: !!selectedSymbol,
+    refetchInterval: 10000, // Fallback polling
+  });
+
+  // Pull initial latest-oi metrics on mount to populate Zustand store
+  useQuery({
+    queryKey: ["module1-initial-latest-oi"],
+    queryFn: async () => {
+      try {
+        const data = await getModule1LatestMetrics();
+        if (data && !useStore.getState().latestOiMetrics) {
+          useStore.getState().setLatestOiMetrics(data);
+        }
+        return data;
+      } catch (err) {
+        console.warn("Failed to fetch initial latest-oi:", err);
+        return null;
+      }
+    },
     retry: false,
   });
 
 
 
-  const tableRows = ohlcBars.map((bar) => {
-    const timeLabel = new Date(bar.openTime).toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" });
+  const stepMs = getTimeframeMins(selectedTimeframe) * 60 * 1000;
+  const continuousBars: Candle[] = [];
+
+  if (ohlcBars.length > 0) {
+    const nowMs = latestOiMetrics ? new Date(latestOiMetrics.timestamp).getTime() : Date.now();
+    const activeBoundary = Math.floor(nowMs / stepMs) * stepMs;
+    const latestCompletedBoundary = activeBoundary - stepMs;
+
+    for (let i = 15; i >= 0; i--) {
+      const targetTime = latestCompletedBoundary - i * stepMs;
+      let bar = ohlcBars.find((b) => b.openTime === targetTime);
+      if (!bar) {
+        // Carry forward values from the closest preceding candle
+        const candidates = ohlcBars.filter((b) => b.openTime < targetTime);
+        if (candidates.length > 0) {
+          bar = {
+            ...candidates[candidates.length - 1],
+            openTime: targetTime,
+          };
+        } else {
+          bar = {
+            ...ohlcBars[0],
+            openTime: targetTime,
+          };
+        }
+      }
+      continuousBars.push(bar);
+    }
+  }
+
+  const tableRows = continuousBars.map((bar) => {
+    const timeLabel = new Date(bar.openTime).toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
     return { time: timeLabel, open: bar.open, high: bar.high, low: bar.low, close: bar.close };
   });
 
@@ -292,20 +369,61 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
 
     const previous = tableRows[rowIndex - 1] || row;
     const rowsToDate = tableRows.slice(0, rowIndex + 1);
-    const callTotal = row.close;
-    const putTotal = useLiveValues && spotLtp > 0 ? spotLtp : row.low;
+
+    const baseClose = latestRow ? latestRow.close : 1;
+    const baseLow = latestRow ? latestRow.low : 1;
+
+    // Use live Open Interest totals as the scaling base if available
+    const liveCallBase = latestOiMetrics ? latestOiMetrics.c_tl : null;
+    const livePutBase = latestOiMetrics ? latestOiMetrics.p_tl : null;
+
+    const callTotal = liveCallBase !== null && baseClose > 0 
+      ? Math.round(liveCallBase * (row.close / baseClose)) 
+      : row.close;
+
+    const prevCallTotal = liveCallBase !== null && baseClose > 0
+      ? Math.round(liveCallBase * (previous.close / baseClose))
+      : previous.close;
+
+    const putTotal = livePutBase !== null && baseLow > 0 
+      ? Math.round(livePutBase * (row.low / baseLow)) 
+      : row.low;
+
+    const prevPutTotal = livePutBase !== null && baseLow > 0
+      ? Math.round(livePutBase * (previous.low / baseLow))
+      : previous.low;
+
     const futuresTotal = useLiveValues && futLtp > 0 ? futLtp : row.close;
-    const callDelta = callTotal - previous.close;
-    const putDelta = putTotal - previous.low;
+    const callDelta = callTotal - prevCallTotal;
+    const putDelta = putTotal - prevPutTotal;
     const futuresDelta = futuresTotal - previous.close;
-    const callMean = rowsToDate.reduce((sum, item) => sum + item.close, 0) / rowsToDate.length;
-    const putMean = rowsToDate.reduce((sum, item) => sum + item.low, 0) / rowsToDate.length;
-    const sessionHigh = Math.max(...rowsToDate.map((item) => item.high));
-    const sessionLow = Math.min(...rowsToDate.map((item) => item.low));
+
+    // Scale means and high/low values for consistency
+    const callMean = rowsToDate.reduce((sum, item) => {
+      const val = liveCallBase !== null && baseClose > 0 
+        ? Math.round(liveCallBase * (item.close / baseClose))
+        : item.close;
+      return sum + val;
+    }, 0) / rowsToDate.length;
+
+    const putMean = rowsToDate.reduce((sum, item) => {
+      const val = livePutBase !== null && baseLow > 0 
+        ? Math.round(livePutBase * (item.low / baseLow))
+        : item.low;
+      return sum + val;
+    }, 0) / rowsToDate.length;
+
+    const sessionHigh = liveCallBase !== null && baseClose > 0 
+      ? Math.max(...rowsToDate.map(item => Math.round(liveCallBase * (item.high / baseClose))))
+      : Math.max(...rowsToDate.map(item => item.high));
+
+    const sessionLow = liveCallBase !== null && baseClose > 0 
+      ? Math.min(...rowsToDate.map(item => Math.round(liveCallBase * (item.low / baseClose))))
+      : Math.min(...rowsToDate.map(item => item.low));
 
     return [
       { label: "C_TL", value: callTotal, tone: "neutral" },
-      { label: "C_MN", value: callMean, tone: "neutral" },
+      { label: "C_MN", value: Math.round(callMean), tone: "neutral" },
       { label: "C_Hig", value: sessionHigh, tone: "neutral" },
       { label: "C_Low", value: sessionLow, tone: "neutral" },
       { label: "C_Buy", value: Math.max(callDelta, 0), tone: "positive" },
@@ -313,9 +431,13 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
       { label: "F_Buy", value: Math.max(futuresDelta, 0), tone: "positive" },
       { label: "F_Sell", value: Math.min(futuresDelta, 0), tone: "negative" },
       { label: "P_TL", value: putTotal, tone: "neutral" },
-      { label: "P_MN", value: putMean, tone: "neutral" },
-      { label: "P_Hig", value: sessionHigh, tone: "neutral" },
-      { label: "P_Low", value: sessionLow, tone: "neutral" },
+      { label: "P_MN", value: Math.round(putMean), tone: "neutral" },
+      { label: "P_Hig", value: livePutBase !== null && baseLow > 0 
+          ? Math.max(...rowsToDate.map(item => Math.round(livePutBase * (item.high / baseLow))))
+          : Math.max(...rowsToDate.map(item => item.high)), tone: "neutral" },
+      { label: "P_Low", value: livePutBase !== null && baseLow > 0 
+          ? Math.min(...rowsToDate.map(item => Math.round(livePutBase * (item.low / baseLow))))
+          : Math.min(...rowsToDate.map(item => item.low)), tone: "neutral" },
       { label: "P_Buy", value: Math.max(putDelta, 0), tone: "positive" },
       { label: "P_Sell", value: Math.min(putDelta, 0), tone: "negative" },
     ];
@@ -347,14 +469,15 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
   const latestCallSignal = latestOiMetrics?.callSignal || (oiMetrics.length > 0 ? getCallOiSignal(oiMetrics) : "NEUTRAL");
   const latestPutSignal = latestOiMetrics?.putSignal || PUT_INVERSE[latestCallSignal];
 
+  const allRowsReversed = [...tableRows].reverse();
   const displayedRows = showFullGrid || !isSplit
-    ? [...tableRows].reverse()
-    : [...tableRows].reverse().slice(0, 12);
+    ? allRowsReversed.slice(0, 15) // Limit to exactly 15 records
+    : allRowsReversed.slice(0, 12);
 
   // Table cell color helpers
   const tdBase: React.CSSProperties = {
-    fontFamily: "'Inter', sans-serif", fontSize: isSplit ? 10 : 11, fontWeight: 600,
-    padding: isSplit ? "4px 3px" : "5px 4px", whiteSpace: "nowrap",
+    fontFamily: "'Inter', sans-serif", fontSize: isSplit ? 8 : 10, fontWeight: 600,
+    padding: isSplit ? "4px 1.5px" : "5px 2.5px", whiteSpace: "nowrap",
     borderBottom: "1px solid var(--trading-border)",
     borderRight: "1px solid var(--trading-border)",
     color: "var(--trading-text-active)",
@@ -487,9 +610,7 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
         }
 
         .m1-oi-table-wrap {
-          overflow-x: hidden;
-          overflow-y: auto;
-          max-height: ${isSplit ? "420px" : "48vh"};
+          overflow: hidden;
           border-radius: 8px;
           border: 1.5px solid var(--trading-border);
           background: var(--trading-surface);
@@ -624,7 +745,7 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
                       <div key={idx} style={{ display: "flex", alignItems: "center", gap: 6 }}>
                         <span style={{ fontSize: 10, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.02em" }}>{c.label}:</span>
                         <span style={{ fontSize: 13, fontWeight: 800, color: flashColor, display: "inline-flex", alignItems: "center" }}>
-                          {c.value > 0 ? c.value.toLocaleString("en-IN", { minimumFractionDigits: 1 }) : "—"}
+                          {c.value > 0 ? c.value.toLocaleString("en-US", { minimumFractionDigits: 1 }) : "—"}
                           {c.flash && (
                             <span style={{ fontSize: 10, marginLeft: 2 }}>
                               {c.flash === "up" ? "▲" : "▼"}
@@ -676,12 +797,12 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
                   }}
                 >
                   <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, color: "var(--trading-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14 }}>
-                    OI Dashboard Metrics - {latestRow.time}
+                    OI Dashboard Metrics - {latestOiMetrics ? formatTimestampToHms(latestOiMetrics.timestamp) : (latestRow ? latestRow.time : "—")}
                   </div>
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(96px, 1fr))",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
                       gap: 10,
                     }}
                   >
@@ -724,7 +845,7 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
                   Historical OI Dashboard Data
                 </div>
                 <div className="m1-oi-table-wrap">
-                  <table className="m1-oi-table">
+                  <table className="m1-oi-table" style={{ width: "100%" }}>
                     <colgroup>
                       {historicalHeaders.map((h) => (
                         <col key={h.key} style={{ width: tableColumnWidths[h.key] || "5%" }} />
@@ -768,7 +889,7 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
                                 color,
                                 borderLeft: isOiStart || isSignalStart ? "1px solid var(--trading-border)" : undefined,
                                 borderRight: "1px solid var(--trading-border)",
-                                padding: isSplit ? "4px 2px" : "5px 3px",
+                                padding: isSplit ? "4px 1px" : "5px 2px",
                                 fontSize: isSplit ? "8px" : "9px",
                               }}
                               title={h.label}
@@ -780,32 +901,24 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
                       </tr>
                     </thead>
                     <tbody>
-                      {isClosed ? (
-                        <tr>
-                          <td
-                            colSpan={historicalHeaders.length}
-                            style={{
-                              ...tdBase,
-                              textAlign: "center",
-                              padding: "48px 0",
-                              color: "#E53935",
-                              fontSize: "14px",
-                              fontWeight: 800,
-                              letterSpacing: "0.05em",
-                            }}
-                          >
-                            Market Closed
-                          </td>
-                        </tr>
-                      ) : isLoading ? (
+                      {isLoading ? (
                         <tr><td colSpan={historicalHeaders.length} style={{ ...tdBase, textAlign: "center", padding: "32px 0", color: "var(--trading-text-muted)" }}>Loading market data…</td></tr>
                       ) : tableRows.length === 0 ? (
                         <tr><td colSpan={historicalHeaders.length} style={{ ...tdBase, textAlign: "center", padding: "32px 0", color: "var(--trading-text-muted)" }}>Awaiting finalized timeframe boundaries.</td></tr>
                       ) : (
-                        displayedRows.map((row, idx) => {
-                          const isLatest = idx === 0;
-                          const rowIndex = tableRows.length - 1 - idx;
-                          const tin = isLatest && latestOiMetrics ? latestOiMetrics.tin : 18 + rowIndex;
+                        displayedRows.map((_, idx) => {
+                          const hasLiveRow = !!latestOiMetrics;
+                          const isLatest = hasLiveRow ? idx === 0 : false;
+                          const candleIdx = hasLiveRow ? idx - 1 : idx;
+
+                          const targetBar = displayedRows[candleIdx] || null;
+                          const displayTime = isLatest && latestOiMetrics
+                            ? formatTimestampToHms(latestOiMetrics.timestamp)
+                            : (targetBar ? targetBar.time : "—");
+
+                          const latestTin = latestOiMetrics ? latestOiMetrics.tin : (tableRows.length > 0 ? 18 + (tableRows.length - 1) : 18);
+                          const tin = latestTin - idx;
+                          const rowIndex = tableRows.length - 1 - (isLatest ? 0 : candleIdx);
                           const rowOiMetrics = isLatest && latestOiMetrics ? metricsFromApiPayload(latestOiMetrics) : buildFallbackOiMetrics(rowIndex, isLatest);
                           const callSignal = isLatest && latestOiMetrics ? latestOiMetrics.callSignal : getCallOiSignal(rowOiMetrics);
                           const putSignal = isLatest && latestOiMetrics ? latestOiMetrics.putSignal : PUT_INVERSE[callSignal];
@@ -828,10 +941,10 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
                               style={{ background: isLatest ? "rgba(4,120,87,0.04)" : "transparent", transition: "background 0.15s" }}
                             >
                               <td
-                                title={row.time}
+                                title={displayTime}
                                 style={{ ...tdBase, textAlign: "center", fontWeight: isLatest ? 800 : 600, color: isLatest ? GREEN : "var(--trading-text-active)" }}
                               >
-                                {row.time}
+                                {displayTime}
                                 {isLatest && !isSplit && (
                                   <span title="Latest row" style={{ marginLeft: 3, display: "inline-block", width: 5, height: 5, borderRadius: "50%", background: GREEN }} />
                                 )}

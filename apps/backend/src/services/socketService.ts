@@ -3,6 +3,7 @@ import { verifyAccessToken } from "../utils/token";
 import { setOnTickReceived } from "./dataFeed";
 import { setOnPivotsUpdated, evaluateIndicators } from "./pivotService";
 import { Tick, PivotLevels } from "@stock/shared";
+import { getLatestModule1OiMetrics } from "./module1OiService";
 
 let ioServer: Server | null = null;
 
@@ -31,6 +32,9 @@ export const initSocketServer = (io: Server) => {
 
   io.on("connection", (socket: Socket) => {
     console.log(`[Socket] Client connected: ${socket.id} (User: ${socket.data.userId})`);
+
+    // Send initial latest OI metrics immediately on connection
+    socket.emit("latest-oi", getLatestModule1OiMetrics());
 
     // 1. Join room to receive raw price ticks for a specific symbol
     socket.on("join:symbol", (symbol: string) => {
@@ -92,6 +96,9 @@ export const initSocketServer = (io: Server) => {
 
     // Broadcast raw tick to market room
     ioServer.to(`market:${tick.symbol}`).emit("tick", tick);
+
+    // Broadcast latest computed OI metrics to all clients on every tick ingestion
+    ioServer.emit("latest-oi", getLatestModule1OiMetrics());
 
     // If this is NIFTY-FUT, trigger indicator evaluations for any active rooms listening to this symbol
     if (tick.symbol === "NIFTY-FUT") {
