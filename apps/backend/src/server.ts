@@ -6,8 +6,10 @@ import rateLimit from "express-rate-limit";
 import { Server } from "socket.io";
 import dotenv from "dotenv";
 
-// Load configuration parameters
-dotenv.config();
+import { validateSecrets } from "./config/config";
+
+// Run security audit and configuration validation
+validateSecrets();
 
 import { connectDB } from "./config/db";
 import redis from "./config/redis";

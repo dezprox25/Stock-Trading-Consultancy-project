@@ -10,9 +10,9 @@ const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
 const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 const socket_io_1 = require("socket.io");
-const dotenv_1 = __importDefault(require("dotenv"));
-// Load configuration parameters
-dotenv_1.default.config();
+const config_1 = require("./config/config");
+// Run security audit and configuration validation
+(0, config_1.validateSecrets)();
 const db_1 = require("./config/db");
 const redis_1 = __importDefault(require("./config/redis"));
 const auth_1 = __importDefault(require("./routes/auth"));
