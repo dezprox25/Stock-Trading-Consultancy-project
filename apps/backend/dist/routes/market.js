@@ -15,7 +15,10 @@ router.get("/market/pivots/:symbol/:tf", auth_1.authenticate, market_1.getPivotL
 router.get("/market/option-chain/:index", auth_1.authenticate, market_1.getOptionChain);
 router.post("/market/custom-timeframe", auth_1.authenticate, market_1.updateCustomTimeframe);
 router.get("/market/status", auth_1.authenticate, market_1.getMarketStatus);
+router.get("/module/status", auth_1.authenticate, market_1.getModuleStatus);
 // Module 1 Indicators
 router.get("/module1/indicators/:symbol", auth_1.authenticate, market_1.getIndicatorsEndpoint);
 router.get("/module1/latest-oi", market_1.getModule1LatestOi);
+router.get("/module1/status", market_1.getModule1Status);
+router.get("/module1/test-auth", market_1.runZebuAuthTestEndpoint);
 exports.default = router;

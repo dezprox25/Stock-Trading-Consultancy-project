@@ -20,4 +20,5 @@ router.post("/register", authRateLimiter, auth_1.register);
 router.post("/login", authRateLimiter, auth_1.login);
 router.post("/refresh", auth_1.refresh);
 router.post("/logout", auth_2.authenticate, auth_1.logout);
+router.get("/me", auth_2.authenticate, auth_1.me);
 exports.default = router;

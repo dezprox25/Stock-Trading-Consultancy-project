@@ -12,7 +12,9 @@ import {
   getOptionChain,
   updateCustomTimeframe,
   getMarketStatus,
-  getModuleStatus
+  getModuleStatus,
+  getModule1Status,
+  runZebuAuthTestEndpoint
 } from "../controllers/market";
 
 const router = Router();
@@ -34,5 +36,7 @@ router.get("/module/status", authenticate, getModuleStatus);
 // Module 1 Indicators
 router.get("/module1/indicators/:symbol", authenticate, getIndicatorsEndpoint);
 router.get("/module1/latest-oi", getModule1LatestOi);
+router.get("/module1/status", getModule1Status);
+router.get("/module1/test-auth", runZebuAuthTestEndpoint);
 
 export default router;

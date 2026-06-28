@@ -3,13 +3,28 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.initAetramMarketDataService = exports.connectToAetramWebSocket = exports.subscribeToInstruments = exports.resolveOptionStrikeToken = exports.loginToAetram = void 0;
+exports.initAetramMarketDataService = exports.connectToAetramWebSocket = exports.subscribeToInstruments = exports.resolveOptionStrikeToken = exports.loginToAetram = exports.isAetramConnected = void 0;
 const axios_1 = __importDefault(require("axios"));
 const socket_io_client_1 = require("socket.io-client");
 const redis_1 = __importDefault(require("../config/redis"));
 let sessionToken = null;
 let userID = null;
 let socket = null;
+let socketConnected = false;
+const isAetramConnected = () => {
+    const apiKey = getApiKey();
+    const apiSecret = getApiSecret();
+    const authUrl = getAuthUrl();
+    const baseUrl = getBaseUrl();
+    if (isPlaceholder(apiKey) || isPlaceholder(apiSecret) || !authUrl || !baseUrl) {
+        return "WAITING_FOR_CONFIGURATION";
+    }
+    if (sessionToken && socketConnected) {
+        return "CONNECTED";
+    }
+    return "ERROR";
+};
+exports.isAetramConnected = isAetramConnected;
 // Caches for symbol mapping
 const symbolToTokenMap = new Map();
 const tokenToSymbolMap = new Map(); // key is `segment|token` or just `token`
@@ -218,9 +233,11 @@ const connectToAetramWebSocket = async () => {
         reconnectionAttempts: Infinity,
     });
     socket.on("connect", () => {
+        socketConnected = true;
         console.log("[AetramMD] Socket.IO feed connected successfully.");
     });
     socket.on("connect_error", (error) => {
+        socketConnected = false;
         console.error("[AetramMD] Socket connection error:", error);
     });
     // Attach handlers for LTP and OI
@@ -229,6 +246,7 @@ const connectToAetramWebSocket = async () => {
     socket.on("1510-json-full", handleOiTick);
     socket.on("1510-json-partial", handleOiTick);
     socket.on("disconnect", (reason) => {
+        socketConnected = false;
         console.warn(`[AetramMD] Socket disconnected: ${reason}`);
     });
     return true;

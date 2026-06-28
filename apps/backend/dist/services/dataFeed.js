@@ -7,11 +7,11 @@ exports.processIncomingTick = exports.initDataFeed = exports.setOnTickReceived =
 const redis_1 = __importDefault(require("../config/redis"));
 const ohlcAggregator_1 = require("./ohlcAggregator");
 const module1OiService_1 = require("./module1OiService");
+const monitoringService_1 = require("./monitoringService");
 const zebuMarketDataClient_1 = require("./zebuMarketDataClient");
-let reconnectTimeout = null;
+const zebuAuthService_1 = require("./zebuAuthService");
 let mockInterval = null;
 let isMockActive = false;
-let zebuClient = null;
 let onTickReceived = null;
 const setOnTickReceived = (callback) => {
     onTickReceived = callback;
@@ -36,13 +36,9 @@ exports.initDataFeed = initDataFeed;
  * Connects to the Zebu MYNT / Zebu Trade market data stream.
  */
 const connectToZebuMarketData = () => {
-    if (reconnectTimeout)
-        clearTimeout(reconnectTimeout);
-    zebuClient = (0, zebuMarketDataClient_1.startZebuMarketDataFeed)(exports.processIncomingTick, module1OiService_1.setModule1OiDataSource, (reason) => {
+    zebuAuthService_1.zebuAuthService.startFeed(exports.processIncomingTick, module1OiService_1.setModule1OiDataSource, (reason) => {
         console.log(`[Module1/Zebu] Falling back to simulator: ${reason}`);
-        zebuClient = null;
         startMockGenerator();
-        reconnectTimeout = setTimeout(connectToZebuMarketData, 3000);
     });
 };
 /**
@@ -50,6 +46,8 @@ const connectToZebuMarketData = () => {
  */
 const processIncomingTick = async (tick) => {
     const { symbol, ltp, oi } = tick;
+    // Track tick freshness
+    (0, monitoringService_1.recordTickReceived)();
     // 1. Cache latest price in Redis
     await redis_1.default.set(`ltp:${symbol}`, ltp.toString());
     // 2. Cache latest open interest in Redis if present

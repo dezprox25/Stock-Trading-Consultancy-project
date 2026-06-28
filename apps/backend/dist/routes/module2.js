@@ -5,4 +5,5 @@ const module2_1 = require("../controllers/module2");
 const router = (0, express_1.Router)();
 // Endpoint to check configuration status and session statistics
 router.get("/status", module2_1.getModule2Status);
+router.get("/test-auth", module2_1.runAetramAuthTestEndpoint);
 exports.default = router;

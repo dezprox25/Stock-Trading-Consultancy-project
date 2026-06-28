@@ -1,6 +1,10 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getLatestModule1OiMetrics = exports.ingestModule1OiTick = exports.setModule1OiDataSource = void 0;
+exports.initModule1OiService = exports.getLatestModule1OiMetrics = exports.ingestModule1OiTick = exports.setModule1OiDataSource = void 0;
+const redis_1 = __importDefault(require("../config/redis"));
 const PUT_INVERSE = {
     STRONG_BULL: "STRONG_BEAR",
     MILD_BULL: "MILD_BEAR",
@@ -106,10 +110,10 @@ const createOrUpdateLatestRow = (timestamp) => {
 const ingestModule1OiTick = (tick) => {
     if (tick.oi === undefined || Number.isNaN(tick.oi))
         return;
-    if (tick.symbol.endsWith("CE")) {
+    if (tick.symbol.endsWith("CE") || /C\d+$/.test(tick.symbol)) {
         ceOiBySymbol.set(tick.symbol, tick.oi);
     }
-    else if (tick.symbol.endsWith("PE")) {
+    else if (tick.symbol.endsWith("PE") || /P\d+$/.test(tick.symbol)) {
         peOiBySymbol.set(tick.symbol, tick.oi);
     }
     else if (tick.symbol.endsWith("-FUT") || tick.symbol.includes("FUT")) {
@@ -128,3 +132,35 @@ const getLatestModule1OiMetrics = () => {
     return latestRow;
 };
 exports.getLatestModule1OiMetrics = getLatestModule1OiMetrics;
+/**
+ * Warm up the in-memory CE/PE/Futures maps using last cached values in Redis
+ */
+const initModule1OiService = async () => {
+    try {
+        const keys = await redis_1.default.keys("oi:*");
+        for (const key of keys) {
+            const val = await redis_1.default.get(key);
+            if (val) {
+                const symbol = key.replace("oi:", "");
+                const oi = parseInt(val);
+                if (!isNaN(oi)) {
+                    if (symbol.endsWith("CE") || /C\d+$/.test(symbol)) {
+                        ceOiBySymbol.set(symbol, oi);
+                    }
+                    else if (symbol.endsWith("PE") || /P\d+$/.test(symbol)) {
+                        peOiBySymbol.set(symbol, oi);
+                    }
+                    else if (symbol.endsWith("-FUT") || symbol.includes("FUT")) {
+                        latestFuturesOi = oi;
+                    }
+                }
+            }
+        }
+        console.log(`[Module1OiService] Loaded ${ceOiBySymbol.size} CE and ${peOiBySymbol.size} PE options from Redis cache on start.`);
+        createOrUpdateLatestRow(new Date());
+    }
+    catch (err) {
+        console.warn("[Module1OiService] Redis warmup warning:", err);
+    }
+};
+exports.initModule1OiService = initModule1OiService;

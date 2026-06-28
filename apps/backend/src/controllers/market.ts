@@ -367,3 +367,27 @@ export const getModuleStatus = async (req: AuthenticatedRequest, res: Response) 
   }
 };
 
+// Get Module 1 Zebu Authentication Status
+export const getModule1Status = async (_req: any, res: Response) => {
+  try {
+    const { zebuAuthService } = require("../services/zebuAuthService");
+    const status = zebuAuthService.getStatus();
+    return res.status(200).json(status);
+  } catch (error) {
+    console.error("Get Module 1 Status Error:", error);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+// Programmatic Production Integration Testing endpoint
+export const runZebuAuthTestEndpoint = async (_req: any, res: Response) => {
+  try {
+    const { runProductionZebuAuthTest } = require("../utils/testZebuAuth");
+    const report = await runProductionZebuAuthTest();
+    return res.status(200).json(report);
+  } catch (error) {
+    console.error("Run Zebu Auth Test Error:", error);
+    return res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+

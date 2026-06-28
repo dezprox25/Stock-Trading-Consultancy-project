@@ -4,6 +4,7 @@ exports.broadcastTrackerUpdate = exports.initSocketServer = void 0;
 const token_1 = require("../utils/token");
 const dataFeed_1 = require("./dataFeed");
 const pivotService_1 = require("./pivotService");
+const module1OiService_1 = require("./module1OiService");
 let ioServer = null;
 /**
  * Initialize Socket.io server with JWT authentication and room handlers
@@ -27,6 +28,8 @@ const initSocketServer = (io) => {
     });
     io.on("connection", (socket) => {
         console.log(`[Socket] Client connected: ${socket.id} (User: ${socket.data.userId})`);
+        // Send initial latest OI metrics immediately on connection
+        socket.emit("latest-oi", (0, module1OiService_1.getLatestModule1OiMetrics)());
         // 1. Join room to receive raw price ticks for a specific symbol
         socket.on("join:symbol", (symbol) => {
             socket.join(`market:${symbol}`);
@@ -73,6 +76,8 @@ const initSocketServer = (io) => {
             return;
         // Broadcast raw tick to market room
         ioServer.to(`market:${tick.symbol}`).emit("tick", tick);
+        // Broadcast latest computed OI metrics to all clients on every tick ingestion
+        ioServer.emit("latest-oi", (0, module1OiService_1.getLatestModule1OiMetrics)());
         // If this is NIFTY-FUT, trigger indicator evaluations for any active rooms listening to this symbol
         if (tick.symbol === "NIFTY-FUT") {
             const timeframes = ["1m", "3m", "5m", "custom"];

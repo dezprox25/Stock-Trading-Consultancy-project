@@ -3,14 +3,60 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getZebuOAuthStatus = exports.resolveZebuSessionToken = exports.getCachedZebuSessionToken = exports.buildZebuAuthorizeUrl = exports.hasZebuOAuthConfig = exports.getZebuOAuthMissingConfig = exports.setZebuAuthCode = void 0;
+exports.handleZebuAuthError = exports.isZebuAuthError = exports.getZebuOAuthStatus = exports.resolveZebuSessionToken = exports.getCachedZebuSessionToken = exports.buildZebuAuthorizeUrl = exports.hasZebuOAuthConfig = exports.getZebuOAuthMissingConfig = exports.setZebuAuthCode = exports.setIgnoreEnvToken = exports.tokenManager = void 0;
 const axios_1 = __importDefault(require("axios"));
 const crypto_1 = __importDefault(require("crypto"));
 const sha256 = (text) => {
     return crypto_1.default.createHash("sha256").update(text).digest("hex");
 };
-let inMemorySessionToken = null;
+// Centralized Token Manager
+class ZebuTokenManager {
+    token = null;
+    expiresAt = null;
+    isForcedExpired = false;
+    tokenLifetimeMs = 24 * 60 * 60 * 1000; // 24 hours default
+    getToken() {
+        if (this.isTokenExpired()) {
+            return null;
+        }
+        return this.token;
+    }
+    setToken(token, lifetimeMs = this.tokenLifetimeMs) {
+        this.token = token;
+        this.expiresAt = new Date(Date.now() + lifetimeMs);
+        this.isForcedExpired = false;
+        console.log(`[Zebu] Token Stored (Expires at: ${this.expiresAt.toISOString()})`);
+    }
+    clearToken() {
+        this.token = null;
+        this.expiresAt = null;
+        this.isForcedExpired = false;
+        console.log(`[Zebu] Token Cleared`);
+    }
+    isTokenValid() {
+        return !!this.token && !this.isTokenExpired();
+    }
+    isTokenExpired() {
+        if (this.isForcedExpired) {
+            return true;
+        }
+        if (!this.token || !this.expiresAt) {
+            return true;
+        }
+        return Date.now() > this.expiresAt.getTime();
+    }
+    forceExpire() {
+        this.isForcedExpired = true;
+        console.log(`[Zebu] Token Expired (Forced Expiry Simulated)`);
+    }
+}
+exports.tokenManager = new ZebuTokenManager();
 let inMemoryAuthCode = null;
+let ignoreEnvToken = false;
+const setIgnoreEnvToken = (val) => {
+    ignoreEnvToken = val;
+};
+exports.setIgnoreEnvToken = setIgnoreEnvToken;
 const isPlaceholder = (value) => !value || value.includes("your-") || value.includes("placeholder");
 const getClientId = () => process.env.ZEBU_CLIENT_ID || "";
 const getUserId = () => process.env.ZEBU_USER_ID || getClientId();
@@ -63,15 +109,19 @@ const extractSessionToken = (payload) => payload?.susertoken ||
     payload?.data?.susertoken ||
     payload?.data?.sessionToken ||
     payload?.data?.access_token;
-const getCachedZebuSessionToken = () => inMemorySessionToken;
+const getCachedZebuSessionToken = () => exports.tokenManager.getToken();
 exports.getCachedZebuSessionToken = getCachedZebuSessionToken;
 const resolveZebuSessionToken = async () => {
-    if (inMemorySessionToken)
-        return inMemorySessionToken;
-    const envToken = process.env.ZEBU_SUSERTOKEN || process.env.ZEBU_SESSION_TOKEN;
-    if (!isPlaceholder(envToken)) {
-        inMemorySessionToken = envToken;
-        return inMemorySessionToken;
+    // Check token manager cache first
+    const cachedToken = exports.tokenManager.getToken();
+    if (cachedToken)
+        return cachedToken;
+    if (!ignoreEnvToken) {
+        const envToken = process.env.ZEBU_SUSERTOKEN || process.env.ZEBU_SESSION_TOKEN;
+        if (!isPlaceholder(envToken)) {
+            exports.tokenManager.setToken(envToken);
+            return envToken;
+        }
     }
     // 1. Try QuickAuth Direct Login first if credentials exist
     const uid = (process.env.ZEBU_USER_ID || process.env.ZEBU_CLIENT_ID || "").trim();
@@ -103,8 +153,8 @@ const resolveZebuSessionToken = async () => {
             });
             if (response.data && response.data.stat === "Ok" && response.data.susertoken) {
                 console.log("[ZebuAuth] QuickAuth login successful.");
-                inMemorySessionToken = response.data.susertoken;
-                return inMemorySessionToken;
+                exports.tokenManager.setToken(response.data.susertoken);
+                return response.data.susertoken;
             }
             else {
                 console.warn("[ZebuAuth] QuickAuth login failed, response:", response.data);
@@ -137,13 +187,67 @@ const resolveZebuSessionToken = async () => {
     if (!token || typeof token !== "string") {
         throw new Error("Zebu OAuth token response did not include a session token.");
     }
-    inMemorySessionToken = token;
-    return inMemorySessionToken;
+    exports.tokenManager.setToken(token);
+    return token;
 };
 exports.resolveZebuSessionToken = resolveZebuSessionToken;
 const getZebuOAuthStatus = () => ({
-    hasCachedSessionToken: Boolean(inMemorySessionToken),
+    hasCachedSessionToken: exports.tokenManager.isTokenValid(),
     authorizeUrl: (0, exports.buildZebuAuthorizeUrl)(),
     missing: (0, exports.getZebuOAuthMissingConfig)(),
 });
 exports.getZebuOAuthStatus = getZebuOAuthStatus;
+// Reusable Authentication Error Handler
+const isZebuAuthError = (error) => {
+    if (!error)
+        return false;
+    // 1. Axios / HTTP Errors
+    if (error.response) {
+        const status = error.response.status;
+        if (status === 401 || status === 403) {
+            return true;
+        }
+        const data = error.response.data;
+        if (data) {
+            const dataStr = typeof data === "string" ? data : JSON.stringify(data);
+            const lower = dataStr.toLowerCase();
+            if (lower.includes("unauthorized") ||
+                lower.includes("forbidden") ||
+                lower.includes("invalid session") ||
+                lower.includes("expired session") ||
+                lower.includes("invalid token") ||
+                lower.includes("session expired") ||
+                lower.includes("token expired") ||
+                lower.includes("not_ok") ||
+                lower.includes("not ok")) {
+                return true;
+            }
+        }
+    }
+    // 2. Generic Errors or Custom Message Strings
+    const errMsg = typeof error === "string" ? error : error.message || "";
+    const lowerMsg = errMsg.toLowerCase();
+    if (lowerMsg.includes("401") ||
+        lowerMsg.includes("403") ||
+        lowerMsg.includes("unauthorized") ||
+        lowerMsg.includes("forbidden") ||
+        lowerMsg.includes("invalid session") ||
+        lowerMsg.includes("expired session") ||
+        lowerMsg.includes("invalid token") ||
+        lowerMsg.includes("session expired") ||
+        lowerMsg.includes("token expired") ||
+        lowerMsg.includes("socket authentication failure") ||
+        lowerMsg.includes("not_ok") ||
+        lowerMsg.includes("not ok")) {
+        return true;
+    }
+    return false;
+};
+exports.isZebuAuthError = isZebuAuthError;
+const handleZebuAuthError = (error) => {
+    console.log(`[Zebu] Authentication Failed: ${typeof error === "string" ? error : error.message || JSON.stringify(error)}`);
+    console.log(`[Zebu] Token Expired`);
+    exports.tokenManager.clearToken();
+    (0, exports.setIgnoreEnvToken)(true);
+};
+exports.handleZebuAuthError = handleZebuAuthError;

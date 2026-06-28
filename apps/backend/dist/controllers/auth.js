@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.logout = exports.refresh = exports.login = exports.register = void 0;
+exports.me = exports.logout = exports.refresh = exports.login = exports.register = void 0;
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const User_1 = require("../models/User");
@@ -221,3 +221,35 @@ const logout = async (req, res) => {
     }
 };
 exports.logout = logout;
+// GET /api/auth/me
+const me = async (req, res) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ error: "Unauthorized" });
+        }
+        let user = null;
+        try {
+            user = await User_1.User.findById(userId);
+        }
+        catch (dbErr) {
+            console.warn("[Auth] MongoDB offline. Finding user in-memory for me.");
+            user = inMemoryUsers.get(userId);
+        }
+        if (!user || user.status === "inactive") {
+            return res.status(404).json({ error: "User not found or inactive" });
+        }
+        return res.status(200).json({
+            user: {
+                id: user._id,
+                username: user.username,
+                name: user.name || user.username,
+            },
+        });
+    }
+    catch (error) {
+        console.error("Get Me Error:", error);
+        return res.status(500).json({ error: "Internal Server Error" });
+    }
+};
+exports.me = me;

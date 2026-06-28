@@ -3,12 +3,11 @@ import { aggregateOHLC } from "./ohlcAggregator";
 import { Tick } from "@stock/shared";
 import { ingestModule1OiTick, setModule1OiDataSource } from "./module1OiService";
 import { recordTickReceived } from "./monitoringService";
-import { getZebuMissingConfig, isZebuMarketDataConfigured, startZebuMarketDataFeed } from "./zebuMarketDataClient";
+import { getZebuMissingConfig, isZebuMarketDataConfigured } from "./zebuMarketDataClient";
+import { zebuAuthService } from "./zebuAuthService";
 
-let reconnectTimeout: NodeJS.Timeout | null = null;
 let mockInterval: NodeJS.Timeout | null = null;
 let isMockActive = false;
-let zebuClient: { close: () => void } | null = null;
 
 // Callbacks for broadcasting ticks and updates to client connections
 type TickCallback = (tick: Tick) => void;
@@ -36,17 +35,13 @@ export const initDataFeed = () => {
  * Connects to the Zebu MYNT / Zebu Trade market data stream.
  */
 const connectToZebuMarketData = () => {
-  if (reconnectTimeout) clearTimeout(reconnectTimeout);
-
-  zebuClient = startZebuMarketDataFeed(
+  zebuAuthService.startFeed(
     processIncomingTick,
     setModule1OiDataSource,
     (reason) => {
       console.log(`[Module1/Zebu] Falling back to simulator: ${reason}`);
-      zebuClient = null;
       startMockGenerator();
-      reconnectTimeout = setTimeout(connectToZebuMarketData, 3000);
-    },
+    }
   );
 };
 

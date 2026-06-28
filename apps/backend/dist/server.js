@@ -25,6 +25,8 @@ const dataFeed_1 = require("./services/dataFeed");
 const socketService_1 = require("./services/socketService");
 const trackerService_1 = require("./services/trackerService");
 const aetramMarketDataService_1 = require("./services/aetramMarketDataService");
+const module1OiService_1 = require("./services/module1OiService");
+const monitoringService_1 = require("./services/monitoringService");
 const app = (0, express_1.default)();
 exports.app = app;
 const server = http_1.default.createServer(app);
@@ -96,13 +98,15 @@ app.get("/health", async (_req, res) => {
     catch (err) {
         redisStatus = "error";
     }
+    const monitoring = await (0, monitoringService_1.getMonitoringStatus)();
     res.json({
-        status: "healthy",
+        status: monitoring.status === "OK" ? "healthy" : "warning",
         timestamp: new Date(),
         services: {
             mongodb: mongoStatus,
             redis: redisStatus,
         },
+        monitoring,
     });
 });
 // Mongoose connection status resolver
@@ -156,7 +160,11 @@ const startServer = async () => {
     (0, socketService_1.initSocketServer)(io);
     (0, trackerService_1.initTrackerEngine)();
     (0, aetramMarketDataService_1.initAetramMarketDataService)();
+    // Warm up OI cache from Redis before launching live data feed listeners
+    await (0, module1OiService_1.initModule1OiService)();
     (0, dataFeed_1.initDataFeed)();
+    // Start feed validation and monitoring check loop
+    (0, monitoringService_1.startMonitoringLoop)();
     // Start HTTP / WebSocket Server
     server.listen(PORT, () => {
         console.log(`[Server] Live Trading Display Dashboard listening on port ${PORT} in ${process.env.NODE_ENV || "development"} mode.`);

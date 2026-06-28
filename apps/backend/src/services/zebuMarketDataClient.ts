@@ -180,6 +180,18 @@ export const startZebuMarketDataFeed = (
       const records = Array.isArray(payload) ? payload : [payload];
 
       for (const record of records) {
+        // Intercept connection acknowledgement
+        if (record && record.t === "ck") {
+          if (record.s === "OK") {
+            console.log("[Zebu] WebSocket connection acknowledged by server.");
+          } else {
+            console.error(`[Zebu] WebSocket authentication failed: ${record.msg || record.message || JSON.stringify(record)}`);
+            ws.close();
+            onFallback(`Socket Authentication Failure: ${record.msg || record.message || "Not Ok"}`);
+            return;
+          }
+        }
+
         const tick = toTick(record, symbolByKey);
         if (tick) await onTick(tick);
       }

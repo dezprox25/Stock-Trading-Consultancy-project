@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getMarketStatus = exports.isMarketOpenTime = exports.updateCustomTimeframe = exports.getOptionChain = exports.getModule1LatestOi = exports.getIndicatorsEndpoint = exports.getPivotLevelsEndpoint = exports.getOHLCBars = exports.getFuturesData = exports.getSpotPrice = exports.updateWatchlist = exports.getWatchlist = void 0;
+exports.runZebuAuthTestEndpoint = exports.getModule1Status = exports.getModuleStatus = exports.getMarketStatus = exports.isMarketOpenTime = exports.updateCustomTimeframe = exports.getOptionChain = exports.getModule1LatestOi = exports.getIndicatorsEndpoint = exports.getPivotLevelsEndpoint = exports.getOHLCBars = exports.getFuturesData = exports.getSpotPrice = exports.updateWatchlist = exports.getWatchlist = void 0;
 const Watchlist_1 = require("../models/Watchlist");
 const FuturesOHLC_1 = require("../models/FuturesOHLC");
 const redis_1 = __importDefault(require("../config/redis"));
@@ -12,6 +12,7 @@ const ohlcAggregator_1 = require("../services/ohlcAggregator");
 const pivotService_1 = require("../services/pivotService");
 const module1OiService_1 = require("../services/module1OiService");
 const zebuMarketDataClient_1 = require("../services/zebuMarketDataClient");
+const aetramMarketDataService_1 = require("../services/aetramMarketDataService");
 // Local in-memory watchlists store for when MongoDB is offline
 const inMemoryWatchlists = new Map();
 // Seed default watchlists for guest users
@@ -133,12 +134,25 @@ exports.getFuturesData = getFuturesData;
 // Get completed OHLC candles from Database
 const getOHLCBars = async (req, res) => {
     const { symbol, tf } = req.params;
-    const limit = req.query.limit ? parseInt(req.query.limit) : 50;
+    const limit = req.query.limit ? parseInt(req.query.limit) : 15;
+    const fetchLimit = limit + 1;
     try {
         const dbBars = await FuturesOHLC_1.FuturesOHLC.find({ symbol, timeframe: tf })
             .sort({ bar_time: -1 })
-            .limit(limit);
-        const bars = dbBars.reverse().map((b) => ({
+            .limit(fetchLimit * 3);
+        const seenTimes = new Set();
+        const uniqueBars = [];
+        for (const b of dbBars) {
+            const timeMs = new Date(b.bar_time).getTime();
+            if (!seenTimes.has(timeMs)) {
+                seenTimes.add(timeMs);
+                uniqueBars.push(b);
+            }
+            if (uniqueBars.length >= fetchLimit) {
+                break;
+            }
+        }
+        const bars = uniqueBars.reverse().map((b) => ({
             symbol: b.symbol,
             timeframe: b.timeframe,
             open: b.bar_open,
@@ -152,7 +166,7 @@ const getOHLCBars = async (req, res) => {
     }
     catch (error) {
         console.error("Get OHLC Bars Error, falling back to memory cache:", error);
-        const cachedBars = (0, ohlcAggregator_1.getCachedOHLCBars)(symbol, tf, limit);
+        const cachedBars = (0, ohlcAggregator_1.getCachedOHLCBars)(symbol, tf, fetchLimit);
         return res.status(200).json(cachedBars);
     }
 };
@@ -314,3 +328,45 @@ const getMarketStatus = async (req, res) => {
     }
 };
 exports.getMarketStatus = getMarketStatus;
+// Get connection statuses for both Module 1 (Zebu) and Module 2 (Aetram)
+const getModuleStatus = async (req, res) => {
+    try {
+        const m1Connected = (0, zebuMarketDataClient_1.isZebuLiveConnected)();
+        const m2Status = (0, aetramMarketDataService_1.isAetramConnected)();
+        return res.status(200).json({
+            module1: m1Connected ? "CONNECTED" : "DISCONNECTED",
+            module2: m2Status,
+        });
+    }
+    catch (error) {
+        console.error("Get Module Status Error:", error);
+        return res.status(500).json({ error: "Internal Server Error" });
+    }
+};
+exports.getModuleStatus = getModuleStatus;
+// Get Module 1 Zebu Authentication Status
+const getModule1Status = async (_req, res) => {
+    try {
+        const { zebuAuthService } = require("../services/zebuAuthService");
+        const status = zebuAuthService.getStatus();
+        return res.status(200).json(status);
+    }
+    catch (error) {
+        console.error("Get Module 1 Status Error:", error);
+        return res.status(500).json({ error: "Internal Server Error" });
+    }
+};
+exports.getModule1Status = getModule1Status;
+// Programmatic Production Integration Testing endpoint
+const runZebuAuthTestEndpoint = async (_req, res) => {
+    try {
+        const { runProductionZebuAuthTest } = require("../utils/testZebuAuth");
+        const report = await runProductionZebuAuthTest();
+        return res.status(200).json(report);
+    }
+    catch (error) {
+        console.error("Run Zebu Auth Test Error:", error);
+        return res.status(500).json({ error: "Internal Server Error" });
+    }
+};
+exports.runZebuAuthTestEndpoint = runZebuAuthTestEndpoint;
