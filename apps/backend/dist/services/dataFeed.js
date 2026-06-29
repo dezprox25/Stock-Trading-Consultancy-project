@@ -10,6 +10,7 @@ const module1OiService_1 = require("./module1OiService");
 const monitoringService_1 = require("./monitoringService");
 const zebuMarketDataClient_1 = require("./zebuMarketDataClient");
 const zebuAuthService_1 = require("./zebuAuthService");
+const atmTokenService_1 = require("./atmTokenService");
 let mockInterval = null;
 let isMockActive = false;
 let onTickReceived = null;
@@ -50,6 +51,16 @@ const processIncomingTick = async (tick) => {
     (0, monitoringService_1.recordTickReceived)();
     // 1. Cache latest price in Redis
     await redis_1.default.set(`ltp:${symbol}`, ltp.toString());
+    if ((symbol === "NIFTY-SPOT" || symbol === "Nifty 50") && (0, atmTokenService_1.isDynamicAtmEnabled)()) {
+        const prevGroup = (0, atmTokenService_1.getActiveSubscriptionGroup)()
+            ? { ...(0, atmTokenService_1.getActiveSubscriptionGroup)(), subscriptionList: [...(0, atmTokenService_1.getActiveSubscriptionGroup)().subscriptionList] }
+            : null;
+        const newGroup = (0, atmTokenService_1.updateATMStrikeFromPrice)(ltp);
+        if (newGroup && prevGroup && newGroup.subscriptionList.join("#") !== prevGroup.subscriptionList.join("#")) {
+            console.log(`[ATM] Subscription list updated due to NIFTY-SPOT tick price ${ltp}. Resubscribing...`);
+            (0, zebuMarketDataClient_1.resubscribeMarketData)(newGroup, prevGroup);
+        }
+    }
     // 2. Cache latest open interest in Redis if present
     if (oi !== undefined) {
         await redis_1.default.set(`oi:${symbol}`, oi.toString());

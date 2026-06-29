@@ -162,7 +162,12 @@ const startServer = async () => {
     (0, trackerService_1.initTrackerEngine)();
     (0, aetramMarketDataService_1.initAetramMarketDataService)();
     // Initialize dynamic ATM configuration (returns immediately if disabled)
-    (0, atmTokenService_1.initializeDynamicATM)();
+    try {
+        await (0, atmTokenService_1.initializeDynamicATM)();
+    }
+    catch (err) {
+        console.error("[Server] Error in initializeDynamicATM:", err?.message || err);
+    }
     // Warm up OI cache from Redis before launching live data feed listeners
     await (0, module1OiService_1.initModule1OiService)();
     (0, dataFeed_1.initDataFeed)();

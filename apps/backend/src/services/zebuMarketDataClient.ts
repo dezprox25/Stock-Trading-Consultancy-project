@@ -8,6 +8,8 @@ type DataSource = "LIVE_MARKET_API" | "SIMULATOR";
 
 let wsConnected = false;
 export const isZebuLiveConnected = () => wsConnected;
+export let activeWs: WebSocket | null = null;
+export let symbolByKey = new Map<string, string>();
 
 interface ZebuInstrument {
   key: string;
@@ -154,12 +156,13 @@ export const startZebuMarketDataFeed = (
 ): ZebuClient => {
   const wsUrl = getZebuWsUrl();
   const instruments = getModule1ZebuInstruments();
-  const symbolByKey = buildInstrumentMap(instruments);
+  symbolByKey = buildInstrumentMap(instruments);
   const subscribeKeys = instruments.map((instrument) => instrument.key).join("#");
 
   console.log(`[Module1/Zebu] Connecting to live feed: ${sanitizeFeedUrl(wsUrl)}`);
 
   const ws = new WebSocket(wsUrl);
+  activeWs = ws;
   let liveConnected = false;
 
   ws.on("open", async () => {
@@ -188,7 +191,6 @@ export const startZebuMarketDataFeed = (
     };
 
     ws.send(JSON.stringify(connectMessage));
-    ws.send(JSON.stringify({ t: "t", k: subscribeKeys }));
 
     liveConnected = true;
     onDataSource("LIVE_MARKET_API");
@@ -205,6 +207,8 @@ export const startZebuMarketDataFeed = (
         if (record && record.t === "ck") {
           if (record.s === "OK") {
             console.log("[Zebu] WebSocket connection acknowledged by server.");
+            ws.send(JSON.stringify({ t: "t", k: subscribeKeys }));
+            console.log(`[Zebu] Subscription message sent for: ${subscribeKeys}`);
           } else {
             console.error(`[Zebu] WebSocket authentication failed: ${record.msg || record.message || JSON.stringify(record)}`);
             ws.close();
@@ -223,6 +227,7 @@ export const startZebuMarketDataFeed = (
 
   ws.on("close", () => {
     wsConnected = false;
+    activeWs = null;
     const reason = liveConnected ? "live feed closed" : "live feed closed before connection";
     onDataSource("SIMULATOR");
     onFallback(reason);
@@ -230,6 +235,7 @@ export const startZebuMarketDataFeed = (
 
   ws.on("error", () => {
     wsConnected = false;
+    activeWs = null;
     onDataSource("SIMULATOR");
     onFallback("live feed connection error");
   });
@@ -237,4 +243,39 @@ export const startZebuMarketDataFeed = (
   return {
     close: () => ws.close(),
   };
+};
+
+export const resubscribeMarketData = (newGroup: any, oldGroup: any) => {
+  if (!wsConnected || !activeWs) {
+    console.log("[Zebu] WebSocket not active, cannot resubscribe.");
+    return;
+  }
+  
+  try {
+    const oldKeys = oldGroup.subscriptionList.map((s: string) => s.split(":")[0]);
+    const newKeys = newGroup.subscriptionList.map((s: string) => s.split(":")[0]);
+    
+    const unsubscribeKeys = oldKeys.filter((k: string) => !newKeys.includes(k)).join("#");
+    const subscribeKeys = newKeys.filter((k: string) => !oldKeys.includes(k)).join("#");
+    
+    // Rebuild symbol mapping map dynamically to prevent memory growth
+    const newSymbolByKey = new Map<string, string>();
+    const dynamicInstruments = getDynamicAtmInstruments();
+    for (const inst of dynamicInstruments) {
+      newSymbolByKey.set(inst.key, inst.symbol);
+      newSymbolByKey.set(inst.token, inst.symbol);
+    }
+    symbolByKey = newSymbolByKey;
+    
+    if (unsubscribeKeys) {
+      console.log(`[Zebu] Dynamic Unsubscribing: ${unsubscribeKeys}`);
+      activeWs.send(JSON.stringify({ t: "u", k: unsubscribeKeys }));
+    }
+    if (subscribeKeys) {
+      console.log(`[Zebu] Dynamic Subscribing: ${subscribeKeys}`);
+      activeWs.send(JSON.stringify({ t: "t", k: subscribeKeys }));
+    }
+  } catch (err: any) {
+    console.error("[Zebu] Error during dynamic resubscription:", err?.message || err);
+  }
 };

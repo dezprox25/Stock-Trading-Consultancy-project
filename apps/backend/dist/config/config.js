@@ -48,7 +48,7 @@ exports.config = {
     },
     dynamicAtm: {
         enabled: getEnv("ENABLE_DYNAMIC_ATM", false, "false") === "true",
-        masterContractUrl: getEnv("ATM_MASTER_CONTRACT_URL", false, ""),
+        masterContractUrl: getEnv("ATM_MASTER_CONTRACT_URL", false, "https://go.mynt.in/NFO_symbols.txt.zip"),
         refreshIntervalMs: parseInt(getEnv("ATM_MASTER_REFRESH_INTERVAL", false, "86400000"), 10),
         strikeRange: parseInt(getEnv("ATM_STRIKE_RANGE", false, "5"), 10),
         expiryStrategy: getEnv("ATM_EXPIRY_STRATEGY", false, "nearest"),

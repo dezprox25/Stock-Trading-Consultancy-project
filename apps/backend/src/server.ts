@@ -189,7 +189,11 @@ const startServer = async () => {
   initAetramMarketDataService();
   
   // Initialize dynamic ATM configuration (returns immediately if disabled)
-  initializeDynamicATM();
+  try {
+    await initializeDynamicATM();
+  } catch (err: any) {
+    console.error("[Server] Error in initializeDynamicATM:", err?.message || err);
+  }
   
   // Warm up OI cache from Redis before launching live data feed listeners
   await initModule1OiService();

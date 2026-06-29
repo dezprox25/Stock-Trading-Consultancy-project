@@ -1,6 +1,8 @@
 import fs from "fs";
 import path from "path";
 import { config } from "../config/config";
+import axios from "axios";
+import AdmZip from "adm-zip";
 
 // --- Task 2: Interfaces and Models ---
 
@@ -16,6 +18,13 @@ export interface OptionContract {
   expiry: string; // Expiry date format e.g. YYYY-MM-DD or DD-MMM-YY
   strike: number;
   optionType: "CE" | "PE";
+}
+
+export interface FuturesContract {
+  tradingSymbol: string;
+  exchange: string;
+  token: string;
+  expiry: string;
 }
 
 export interface StrikeToken {
@@ -55,8 +64,58 @@ export interface ZebuInstrument {
 
 // Cache storage for parsed contracts and subscription group
 let parsedContracts: OptionContract[] = [];
+let parsedFuturesContracts: FuturesContract[] = [];
 let activeSubscriptionGroup: SubscriptionGroup | null = null;
 let lastRefreshTime: Date | null = null;
+
+export const parseExpiryToDate = (exp: string): Date => {
+  const parsed = Date.parse(exp);
+  if (!isNaN(parsed)) return new Date(parsed);
+  
+  // Custom parser for standard DD-MMM-YYYY or DDMMMYY format (e.g. 26JUN26, 30-JUN-2026)
+  const cleanExp = exp.replace(/-/g, "").toUpperCase();
+  const ddmmyyMatch = cleanExp.match(/^(\d{2})([A-Z]{3})(\d{2,4})$/);
+  if (ddmmyyMatch) {
+    const day = parseInt(ddmmyyMatch[1], 10);
+    const monthStr = ddmmyyMatch[2];
+    let year = parseInt(ddmmyyMatch[3], 10);
+    if (ddmmyyMatch[3].length === 2) {
+      year = 2000 + year;
+    }
+    const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+    const monthIdx = months.indexOf(monthStr);
+    if (monthIdx !== -1) {
+      return new Date(year, monthIdx, day);
+    }
+  }
+  return new Date(0);
+};
+
+export const resolveFuturesToken = (targetExpiry?: string): string => {
+  if (parsedFuturesContracts.length === 0) {
+    return process.env.ZEBU_NIFTY_FUT_TOKEN || "NFO|62329:NIFTY-FUT";
+  }
+  
+  let filtered = parsedFuturesContracts;
+  if (targetExpiry) {
+    filtered = parsedFuturesContracts.filter(f => f.expiry === targetExpiry);
+  }
+  
+  if (filtered.length === 0) {
+    filtered = parsedFuturesContracts;
+  }
+  
+  const sorted = [...filtered].sort((a, b) => {
+    return parseExpiryToDate(a.expiry).getTime() - parseExpiryToDate(b.expiry).getTime();
+  });
+  
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const futureFuts = sorted.filter(f => parseExpiryToDate(f.expiry).getTime() >= now.getTime());
+  const nearestFut = futureFuts[0] || sorted[0];
+  
+  return `${nearestFut.exchange}|${nearestFut.token}:${nearestFut.tradingSymbol}`;
+};
 
 // --- Task 11: Configuration ---
 export const getATMConfiguration = (): ATMConfiguration => {
@@ -114,20 +173,41 @@ export const parseMasterContractContent = (content: string): OptionContract[] =>
   let exchangeIdx = -1;
   let tokenIdx = -1;
   let tradingSymbolIdx = -1;
+  let symbolIdx = -1;
   let expiryIdx = -1;
   let strikeIdx = -1;
   let optionTypeIdx = -1;
+  let instrumentIdx = -1;
 
   if (hasHeader) {
-    exchangeIdx = headers.findIndex(h => h.includes("exchange") || h === "exch");
-    tokenIdx = headers.findIndex(h => h === "token" || h === "code" || h.includes("instrumenttoken"));
-    tradingSymbolIdx = headers.findIndex(h => h.includes("symbol") || h.includes("tradingsymbol") || h === "tsym");
-    expiryIdx = headers.findIndex(h => h === "expiry" || h.includes("expdate") || h.includes("expirydate"));
-    strikeIdx = headers.findIndex(h => h.includes("strike") || h === "strike_price");
-    optionTypeIdx = headers.findIndex(h => h.includes("optiontype") || h.includes("opt_type") || h === "opttype" || h === "type");
+    exchangeIdx = headers.indexOf("exchange");
+    if (exchangeIdx === -1) exchangeIdx = headers.findIndex(h => h.includes("exchange") || h === "exch");
+
+    tokenIdx = headers.indexOf("token");
+    if (tokenIdx === -1) tokenIdx = headers.findIndex(h => h === "code" || h.includes("token"));
+
+    tradingSymbolIdx = headers.indexOf("tradingsymbol");
+    if (tradingSymbolIdx === -1) tradingSymbolIdx = headers.indexOf("tsym");
+    if (tradingSymbolIdx === -1) tradingSymbolIdx = headers.findIndex(h => h.includes("tradingsymbol"));
+
+    symbolIdx = headers.indexOf("symbol");
+    if (symbolIdx === -1) symbolIdx = headers.indexOf("sym");
+
+    expiryIdx = headers.indexOf("expiry");
+    if (expiryIdx === -1) expiryIdx = headers.findIndex(h => h.includes("expiry") || h.includes("exp"));
+
+    strikeIdx = headers.indexOf("strikeprice");
+    if (strikeIdx === -1) strikeIdx = headers.findIndex(h => h.includes("strike"));
+
+    optionTypeIdx = headers.indexOf("optiontype");
+    if (optionTypeIdx === -1) optionTypeIdx = headers.findIndex(h => h.includes("option") || h.includes("opt"));
+
+    instrumentIdx = headers.indexOf("instrument");
+    if (instrumentIdx === -1) instrumentIdx = headers.findIndex(h => h.includes("inst"));
   }
 
   const contracts: OptionContract[] = [];
+  parsedFuturesContracts = [];
   const startIdx = hasHeader ? 1 : 0;
 
   for (let i = startIdx; i < lines.length; i++) {
@@ -136,15 +216,19 @@ export const parseMasterContractContent = (content: string): OptionContract[] =>
     let exchange = "";
     let token = "";
     let tradingSymbol = "";
+    let symbol = "";
     let expiry = "";
     let strike = 0;
     let optionType: "CE" | "PE" | null = null;
+    let instrument = "";
 
     if (hasHeader) {
       if (exchangeIdx !== -1) exchange = columns[exchangeIdx];
       if (tokenIdx !== -1) token = columns[tokenIdx];
       if (tradingSymbolIdx !== -1) tradingSymbol = columns[tradingSymbolIdx];
+      if (symbolIdx !== -1) symbol = columns[symbolIdx];
       if (expiryIdx !== -1) expiry = columns[expiryIdx];
+      if (instrumentIdx !== -1) instrument = columns[instrumentIdx];
       
       if (strikeIdx !== -1) {
         strike = parseFloat(columns[strikeIdx]) || 0;
@@ -169,6 +253,11 @@ export const parseMasterContractContent = (content: string): OptionContract[] =>
       }
     }
 
+    // Only process contracts for NIFTY
+    if (symbol !== "NIFTY" && !tradingSymbol.startsWith("NIFTY")) {
+      continue;
+    }
+
     // Inference logic from trading symbol if fields missing
     if (!optionType && tradingSymbol) {
       const upperSymbol = tradingSymbol.toUpperCase();
@@ -186,7 +275,14 @@ export const parseMasterContractContent = (content: string): OptionContract[] =>
       }
     }
 
-    if (exchange && token && tradingSymbol && strike > 0 && optionType) {
+    if (instrument === "FUTIDX" && exchange && token && tradingSymbol) {
+      parsedFuturesContracts.push({
+        tradingSymbol,
+        exchange,
+        token,
+        expiry
+      });
+    } else if (exchange && token && tradingSymbol && strike > 0 && optionType) {
       contracts.push({
         tradingSymbol,
         exchange,
@@ -279,26 +375,6 @@ export const resolveTokens = (
 export const getExpiryInfo = (contracts: OptionContract[]): ExpiryInfo => {
   const expiries = Array.from(new Set(contracts.map(c => c.expiry))).filter(Boolean);
   
-  const parseExpiryToDate = (exp: string): Date => {
-    const parsed = Date.parse(exp);
-    if (!isNaN(parsed)) return new Date(parsed);
-    
-    // Custom parser for standard DDMMMYY format (e.g. 26JUN26)
-    const cleanExp = exp.replace(/-/g, "").toUpperCase();
-    const ddmmyyMatch = cleanExp.match(/^(\d{2})([A-Z]{3})(\d{2})$/);
-    if (ddmmyyMatch) {
-      const day = parseInt(ddmmyyMatch[1], 10);
-      const monthStr = ddmmyyMatch[2];
-      const year = 2000 + parseInt(ddmmyyMatch[3], 10);
-      const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-      const monthIdx = months.indexOf(monthStr);
-      if (monthIdx !== -1) {
-        return new Date(year, monthIdx, day);
-      }
-    }
-    return new Date(0);
-  };
-
   const sortedExpiries = expiries.sort((a, b) => {
     return parseExpiryToDate(a).getTime() - parseExpiryToDate(b).getTime();
   });
@@ -355,18 +431,163 @@ export const buildSubscriptionList = (
  * Single startup entry point for initializing Dynamic ATM Module configuration.
  * Returns immediately unless config.dynamicAtm.enabled is true.
  */
-export const initializeDynamicATM = (): void => {
+export const getActiveSubscriptionGroup = (): SubscriptionGroup | null => {
+  return activeSubscriptionGroup;
+};
+
+export const fallbackToStaticConfig = (): void => {
+  const parseInstrumentString = (val?: string): StrikeToken[] => {
+    if (!val || val.includes("placeholder")) return [];
+    return val
+      .split(",")
+      .map(part => part.trim())
+      .filter(Boolean)
+      .map(part => {
+        const [exchangeToken, symbol] = part.split(":");
+        const [exchange, token] = exchangeToken.split("|");
+        return { key: exchangeToken, exchange, token, symbol };
+      });
+  };
+
+  const ceTokens = parseInstrumentString(process.env.ZEBU_NIFTY_CE_TOKENS);
+  const peTokens = parseInstrumentString(process.env.ZEBU_NIFTY_PE_TOKENS);
+  const spotToken = process.env.ZEBU_NIFTY_SPOT_TOKEN || "NSE|26000:NIFTY-SPOT";
+  const futuresToken = process.env.ZEBU_NIFTY_FUT_TOKEN || "NFO|62329:NIFTY-FUT";
+
+  activeSubscriptionGroup = {
+    spot: spotToken,
+    futures: futuresToken,
+    ceTokens,
+    peTokens,
+    subscriptionList: [
+      spotToken,
+      futuresToken,
+      ...ceTokens.map(t => `${t.key}:${t.symbol}`),
+      ...peTokens.map(t => `${t.key}:${t.symbol}`)
+    ]
+  };
+  console.log(`[ATM] Static configuration loaded successfully: ${ceTokens.length} CE, ${peTokens.length} PE tokens.`);
+};
+
+export const downloadAndExtractMasterContract = async (url: string, destDir: string): Promise<string> => {
+  const zipPath = path.join(destDir, "NFO_symbols.txt.zip");
+  const txtPath = path.join(destDir, "NFO_symbols.txt");
+  
+  console.log(`[ATM] Downloading master contract from ${url}...`);
+  const response = await axios.get(url, { responseType: "arraybuffer" });
+  await fs.promises.writeFile(zipPath, response.data);
+  console.log(`[ATM] Master contract zip saved. Extracting to ${destDir}...`);
+  
+  const zip = new AdmZip(zipPath);
+  zip.extractAllTo(destDir, true);
+  
+  // Clean up zip file
+  if (fs.existsSync(zipPath)) {
+    await fs.promises.unlink(zipPath);
+  }
+  
+  console.log(`[ATM] Master contract extracted successfully: ${txtPath}`);
+  return txtPath;
+};
+
+export const fetchNiftySpotPrice = async (sessionToken: string): Promise<number> => {
+  const uid = process.env.ZEBU_USER_ID || process.env.ZEBU_CLIENT_ID || "";
+  const quotesUrl = process.env.ZEBU_QUOTES_URL || "https://go.mynt.in/NorenWClientTP/GetQuotes";
+  
+  if (!uid) {
+    throw new Error("ZEBU_USER_ID is missing from environment variables.");
+  }
+  
+  const quotePayload = {
+    uid,
+    exch: "NSE",
+    token: "26000" // NIFTY Spot
+  };
+  
+  const quoteDataString = `jData=${JSON.stringify(quotePayload)}&jKey=${sessionToken}`;
+  const response = await axios.post(quotesUrl, quoteDataString, {
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+    }
+  });
+  
+  if (response.data && response.data.stat === "Ok" && response.data.lp) {
+    const price = parseFloat(response.data.lp);
+    if (!isNaN(price) && price > 0) {
+      return price;
+    }
+    throw new Error(`Invalid price returned from GetQuotes: ${response.data.lp}`);
+  }
+  
+  throw new Error(`GetQuotes failed: ${response.data.emsg || JSON.stringify(response.data)}`);
+};
+
+// --- Task 8: Integration Point & Task 10 logging ---
+/**
+ * Single startup entry point for initializing Dynamic ATM Module configuration.
+ * Returns immediately unless config.dynamicAtm.enabled is true.
+ */
+export const initializeDynamicATM = async (): Promise<boolean> => {
   const isEnabled = config.dynamicAtm.enabled;
   
   if (!isEnabled) {
-    console.log("[ATM] Dynamic ATM disabled");
-    return;
+    console.log("[ATM] Dynamic ATM disabled. Loading static configuration.");
+    fallbackToStaticConfig();
+    return true;
   }
   
   console.log("[ATM] Dynamic ATM module initialized");
-  console.log("[ATM] Waiting for permission to authenticate");
   
-  // Preparing backend prepared states without performing live logins / WebSocket setups.
+  try {
+    const { zebuAuthService } = require("./zebuAuthService");
+    const sessionToken = await zebuAuthService.login();
+    if (!sessionToken) {
+      throw new Error("Failed to generate Zebu session token.");
+    }
+    console.log("[ATM] Live authentication succeeded.");
+
+    const destDir = path.resolve(__dirname, "../../");
+    const url = config.dynamicAtm.masterContractUrl;
+    const txtPath = await downloadAndExtractMasterContract(url, destDir);
+    console.log("[ATM] Master Contract download and extraction succeeded.");
+
+    const contracts = await loadMasterContractFromFile(txtPath);
+    if (!contracts || contracts.length === 0) {
+      throw new Error("Master contract parsed 0 options contracts.");
+    }
+    console.log(`[ATM] Successfully parsed ${contracts.length} options contracts.`);
+
+    // Clean up temporary extracted contract file
+    try {
+      if (fs.existsSync(txtPath)) {
+        await fs.promises.unlink(txtPath);
+        console.log("[ATM] Temporary extracted contract file cleaned up.");
+      }
+    } catch (e: any) {
+      console.warn("[ATM] Warning: failed to delete temporary extracted contract file:", e?.message || e);
+    }
+
+    // Auto-detect expiry info
+    const expiryInfo = getExpiryInfo(contracts);
+    console.log(`[ATM] Detected active expiry: ${expiryInfo.nearestExpiry}. Total expiries found: ${expiryInfo.allExpiries.length}`);
+
+    // Fetch live Spot price
+    const spotPrice = await fetchNiftySpotPrice(sessionToken);
+    console.log(`[ATM] Obtained live NIFTY Spot Price: ${spotPrice}`);
+
+    // Calculate initial strike & subscription list
+    const initialGroup = updateATMStrikeFromPrice(spotPrice);
+    if (!initialGroup) {
+      throw new Error("Failed to resolve dynamic option tokens.");
+    }
+    console.log("[ATM] Successfully resolved CE/PE option tokens dynamically.");
+    return true;
+  } catch (error: any) {
+    console.error("[ATM] Dynamic ATM Discovery Failed:", error?.message || error);
+    console.log("[ATM] Falling back to static configuration...");
+    fallbackToStaticConfig();
+    return false;
+  }
 };
 
 /**
@@ -385,7 +606,7 @@ export const updateATMStrikeFromPrice = (liveNiftyPrice: number): SubscriptionGr
   const { ceTokens, peTokens } = resolveTokens(parsedContracts, strikeWindow);
   
   const spotToken = process.env.ZEBU_NIFTY_SPOT_TOKEN || "NSE|26000:NIFTY-SPOT";
-  const futuresToken = process.env.ZEBU_NIFTY_FUT_TOKEN || "NFO|62329:NIFTY-FUT";
+  const futuresToken = resolveFuturesToken();
 
   activeSubscriptionGroup = buildSubscriptionList(ceTokens, peTokens, spotToken, futuresToken);
 

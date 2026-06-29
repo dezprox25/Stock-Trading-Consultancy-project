@@ -3,8 +3,9 @@ import { aggregateOHLC } from "./ohlcAggregator";
 import { Tick } from "@stock/shared";
 import { ingestModule1OiTick, setModule1OiDataSource } from "./module1OiService";
 import { recordTickReceived } from "./monitoringService";
-import { getZebuMissingConfig, isZebuMarketDataConfigured } from "./zebuMarketDataClient";
+import { getZebuMissingConfig, isZebuMarketDataConfigured, resubscribeMarketData } from "./zebuMarketDataClient";
 import { zebuAuthService } from "./zebuAuthService";
+import { isDynamicAtmEnabled, getActiveSubscriptionGroup, updateATMStrikeFromPrice } from "./atmTokenService";
 
 let mockInterval: NodeJS.Timeout | null = null;
 let isMockActive = false;
@@ -56,6 +57,17 @@ export const processIncomingTick = async (tick: Tick) => {
 
   // 1. Cache latest price in Redis
   await redis.set(`ltp:${symbol}`, ltp.toString());
+
+  if ((symbol === "NIFTY-SPOT" || symbol === "Nifty 50") && isDynamicAtmEnabled()) {
+    const prevGroup = getActiveSubscriptionGroup() 
+      ? { ...getActiveSubscriptionGroup()!, subscriptionList: [...getActiveSubscriptionGroup()!.subscriptionList] } 
+      : null;
+    const newGroup = updateATMStrikeFromPrice(ltp);
+    if (newGroup && prevGroup && newGroup.subscriptionList.join("#") !== prevGroup.subscriptionList.join("#")) {
+      console.log(`[ATM] Subscription list updated due to NIFTY-SPOT tick price ${ltp}. Resubscribing...`);
+      resubscribeMarketData(newGroup, prevGroup);
+    }
+  }
   
   // 2. Cache latest open interest in Redis if present
   if (oi !== undefined) {
