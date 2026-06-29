@@ -6,7 +6,6 @@ exports.PivotLevelsSchema = new mongoose_1.Schema({
     symbol: {
         type: String,
         required: true,
-        index: true,
     },
     date: {
         type: Date,

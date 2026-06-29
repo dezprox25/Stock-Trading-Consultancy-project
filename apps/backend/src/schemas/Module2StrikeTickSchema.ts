@@ -15,7 +15,6 @@ export const Module2StrikeTickSchema = new Schema({
   minute_timestamp: {
     type: Date,
     required: true,
-    index: true,
   },
   ltp_integer: {
     type: Number,

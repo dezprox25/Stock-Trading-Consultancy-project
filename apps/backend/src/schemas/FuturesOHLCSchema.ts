@@ -4,12 +4,10 @@ export const FuturesOHLCSchema = new Schema({
   symbol: {
     type: String,
     required: true,
-    index: true,
   },
   timeframe: {
     type: String,
     required: true,
-    index: true,
   },
   bar_open: {
     type: Number,

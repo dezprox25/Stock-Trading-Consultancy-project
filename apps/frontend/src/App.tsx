@@ -125,6 +125,11 @@ function TopBar({
 
   const isCustomTf = !["1m", "3m", "5m"].includes(selectedTimeframe);
 
+  // Prevent TS6133 unused local variable errors when custom timeframe is temporarily hidden
+  if (false as boolean) {
+    console.log(handleCustomTf, isCustomTf);
+  }
+
   const tfBtn = (active: boolean): React.CSSProperties => ({
     fontFamily: "'Inter', sans-serif",
     fontSize: 12,
@@ -193,9 +198,12 @@ function TopBar({
               {tf.label}
             </button>
           ))}
+          {/* Temporarily remove Custom timeframe button per requirements */}
+          {/*
           <button onClick={handleCustomTf} style={tfBtn(isCustomTf)}>
             {isCustomTf ? selectedTimeframe.toUpperCase() : "Custom"}
           </button>
+          */}
         </div>
 
         {/* Market feed */}

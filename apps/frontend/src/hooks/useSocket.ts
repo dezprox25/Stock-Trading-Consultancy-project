@@ -57,9 +57,40 @@ export const useSocket = () => {
       console.log("[SocketClient] Disconnected from server.");
     });
 
-    // Handle raw price ticks
+    // Throttled price tick updates to prevent render flooding
+    const lastTickTime: Record<string, number> = {};
+    const pendingTicks: Record<string, number> = {};
+    const tickTimeouts: Record<string, NodeJS.Timeout> = {};
+
     socket.on("tick", (tick: Tick) => {
-      updatePrice(tick.symbol, tick.ltp);
+      const now = Date.now();
+      const last = lastTickTime[tick.symbol] || 0;
+      
+      const applyUpdate = (symbol: string, ltp: number) => {
+        updatePrice(symbol, ltp);
+        lastTickTime[symbol] = Date.now();
+      };
+      
+      if (now - last >= 250) {
+        applyUpdate(tick.symbol, tick.ltp);
+        if (tickTimeouts[tick.symbol]) {
+          clearTimeout(tickTimeouts[tick.symbol]);
+          delete tickTimeouts[tick.symbol];
+        }
+        delete pendingTicks[tick.symbol];
+      } else {
+        pendingTicks[tick.symbol] = tick.ltp;
+        if (!tickTimeouts[tick.symbol]) {
+          tickTimeouts[tick.symbol] = setTimeout(() => {
+            const pendingLtp = pendingTicks[tick.symbol];
+            if (pendingLtp !== undefined) {
+              applyUpdate(tick.symbol, pendingLtp);
+              delete pendingTicks[tick.symbol];
+            }
+            delete tickTimeouts[tick.symbol];
+          }, 250);
+        }
+      }
     });
 
     // Handle pivot updates
@@ -92,6 +123,7 @@ export const useSocket = () => {
     return () => {
       socket.disconnect();
       socketRef.current = null;
+      Object.values(tickTimeouts).forEach(clearTimeout);
     };
   }, [accessToken]); // Recreate socket instance on auth state transitions
 

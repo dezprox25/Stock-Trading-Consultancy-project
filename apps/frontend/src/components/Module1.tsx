@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useStore } from "../store/useStore";
 import { api, getModule1LatestMetrics, Module1OiMetricsResponse } from "../utils/api";
 import { Candle } from "@stock/shared";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo } from "react";
 
 const GREEN = "#047857";
 const RED = "#E53935";
@@ -30,7 +30,7 @@ const PUT_INVERSE: Record<OiSignal, OiSignal> = {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function PriceCard({ label, value, flash, sub }: { label: string; value: number; flash: "up" | "down" | null; sub?: string }) {
+const PriceCard = memo(function PriceCard({ label, value, flash, sub }: { label: string; value: number; flash: "up" | "down" | null; sub?: string }) {
   const flashColor = flash === "up" ? GREEN : flash === "down" ? RED : undefined;
 
   return (
@@ -69,7 +69,7 @@ function PriceCard({ label, value, flash, sub }: { label: string; value: number;
       )}
     </div>
   );
-}
+});
 
 type OiMetricTone = "positive" | "negative" | "neutral";
 type OiMetric = { label: string; value: number | null; tone: OiMetricTone };
@@ -113,7 +113,7 @@ const getSignalShortLabel = (signal: OiSignal) => {
   return labels[signal];
 };
 
-function OiMetricCard({ label, value, tone }: { label: string; value: number | null; tone: OiMetricTone }) {
+const OiMetricCard = memo(function OiMetricCard({ label, value, tone }: { label: string; value: number | null; tone: OiMetricTone }) {
   const styles = {
     positive: { border: "1.5px solid rgba(4,120,87,0.35)", text: GREEN, bg: "rgba(4,120,87,0.06)" },
     negative: { border: "1.5px solid rgba(229,57,53,0.32)", text: RED, bg: "rgba(229,57,53,0.05)" },
@@ -145,9 +145,9 @@ function OiMetricCard({ label, value, tone }: { label: string; value: number | n
       </span>
     </div>
   );
-}
+});
 
-function SignalCard({ title, signal, icon }: { title: string; signal: OiSignal; icon: React.ReactNode }) {
+const SignalCard = memo(function SignalCard({ title, signal, icon }: { title: string; signal: OiSignal; icon: React.ReactNode }) {
   const props = OI_SIGNAL_MAP[signal];
   const accentColor =
     signal.includes("BULL") ? GREEN :
@@ -195,7 +195,7 @@ function SignalCard({ title, signal, icon }: { title: string; signal: OiSignal; 
       </div>
     </div>
   );
-}
+});
 
 const getTimeframeMins = (tf: string): number => {
   if (tf === "1m") return 1;
@@ -213,17 +213,13 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
   const [showFullGrid, setShowFullGrid] = useState(false);
   const selectedSymbol = useStore((s) => s.selectedSymbol);
   const selectedTimeframe = useStore((s) => s.selectedTimeframe);
-  const prices = useStore((s) => s.prices);
-
-
+  const spotLtp = useStore((s) => s.prices["NIFTY-SPOT"]?.ltp ?? 0);
+  const futLtp  = useStore((s) => s.prices[selectedSymbol]?.ltp ?? 0);
 
   const prevFutRef = useRef<number>(0);
   const prevSpotRef = useRef<number>(0);
   const [futFlash, setFutFlash] = useState<"up" | "down" | null>(null);
   const [spotFlash, setSpotFlash] = useState<"up" | "down" | null>(null);
-
-  const spotLtp = prices["NIFTY-SPOT"]?.ltp ?? 0;
-  const futLtp  = prices[selectedSymbol]?.ltp ?? 0;
 
   useEffect(() => {
     if (futLtp > 0 && prevFutRef.current > 0 && futLtp !== prevFutRef.current) {
@@ -265,7 +261,6 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
       }
       return null;
     },
-    refetchInterval: 10000, // Fallback polling
   });
 
   useQuery({
@@ -282,7 +277,6 @@ export const Module1 = ({ isSplit = false }: { isSplit?: boolean }) => {
       return null;
     },
     enabled: !!selectedSymbol,
-    refetchInterval: 10000, // Fallback polling
   });
 
   // Pull initial latest-oi metrics on mount to populate Zustand store

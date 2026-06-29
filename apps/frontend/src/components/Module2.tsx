@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, memo, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useStore } from "../store/useStore";
 import { api } from "../utils/api";
@@ -13,17 +13,34 @@ const parseStrikeSymbol = (symbol: string) => {
 
 const ensureFullStrikesData = (session: any) => {
   if (!session) return session;
-  const nextSession = JSON.parse(JSON.stringify(session));
-  if (!nextSession.strikes) nextSession.strikes = {};
-  let currentSelected = [...nextSession.selectedStrikes];
-  if (currentSelected.length > 10) currentSelected = currentSelected.slice(0, 10);
-  nextSession.selectedStrikes = currentSelected;
+  let strikesModified = false;
+  const nextStrikes = { ...session.strikes };
+  let currentSelected = [...session.selectedStrikes];
+  
   currentSelected.forEach((strike: string) => {
-    if (!nextSession.strikes[strike]) {
-      nextSession.strikes[strike] = { strike, dayOpen: 0, dayHigh: 0, dayLow: 0, grid: [], trendBadge: "FLAT", isDowntrendActive: false, isDeepLoss: false, pctChange: 0 };
+    if (!nextStrikes[strike]) {
+      nextStrikes[strike] = { 
+        strike, 
+        dayOpen: 0, 
+        dayHigh: 0, 
+        dayLow: 0, 
+        grid: [], 
+        trendBadge: "FLAT", 
+        isDowntrendActive: false, 
+        isDeepLoss: false, 
+        pctChange: 0 
+      };
+      strikesModified = true;
     }
   });
-  return nextSession;
+
+  if (strikesModified) {
+    return {
+      ...session,
+      strikes: nextStrikes
+    };
+  }
+  return session;
 };
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
@@ -33,7 +50,7 @@ const AMBER = "#D97706";
 
 // ── Shared sub-components ─────────────────────────────────────────────────────
 
-function TrendBadge({ badge }: { badge: string }) {
+const TrendBadge = memo(function TrendBadge({ badge }: { badge: string }) {
   const cfg: Record<string, { label: string; color: string; bg: string; border: string; pulse?: boolean }> = {
     L_TO_H:   { label: "L→H ▲", color: GREEN, bg: "rgba(4,120,87,0.1)",   border: "rgba(4,120,87,0.25)" },
     H_TO_L:   { label: "H→L ▼", color: RED,   bg: "rgba(229,57,53,0.1)",  border: "rgba(229,57,53,0.25)", pulse: true },
@@ -55,14 +72,14 @@ function TrendBadge({ badge }: { badge: string }) {
       {c.label}
     </span>
   );
-}
+});
 
-function SegmentedControl<K extends string>({
+const SegmentedControl = memo(function SegmentedControl({
   options, value, onChange, size = "sm",
 }: {
-  options: { key: K; label: string }[];
-  value: K;
-  onChange: (v: K) => void;
+  options: { key: any; label: string }[];
+  value: any;
+  onChange: (v: any) => void;
   size?: "sm" | "xs";
 }) {
   return (
@@ -87,11 +104,11 @@ function SegmentedControl<K extends string>({
       ))}
     </div>
   );
-}
+});
 
-function SelectField({ label, value, onChange, options }: {
+const SelectField = memo(function SelectField({ label, value, onChange, options }: {
   label: string; value: string;
-  onChange: (v: string) => void;
+  onChange: (v: any) => void;
   options: { value: string; label: string }[];
 }) {
   return (
@@ -117,9 +134,9 @@ function SelectField({ label, value, onChange, options }: {
       </div>
     </div>
   );
-}
+});
 
-function FilterChip({ label, active, onClick, color = GREEN }: { label: string; active: boolean; onClick: () => void; color?: string }) {
+const FilterChip = memo(function FilterChip({ label, active, onClick, color = GREEN }: { label: string; active: boolean; onClick: () => void; color?: string }) {
   return (
     <button
       onClick={onClick}
@@ -136,7 +153,7 @@ function FilterChip({ label, active, onClick, color = GREEN }: { label: string; 
       {label}
     </button>
   );
-}
+});
 
 export const Module2 = ({ isSplit = false }: { isSplit?: boolean }) => {
   const activeSession = useStore((s) => s.activeSession);
@@ -208,12 +225,16 @@ export const Module2 = ({ isSplit = false }: { isSplit?: boolean }) => {
   const sessionDataSource = currentSession?.dataSource || "UNAVAILABLE";
   const isLiveInteractive = sessionDataSource === "LIVE_INTERACTIVE_API";
 
-  const sortedTimestamps = (() => {
+  const gridLengthSum = currentSession?.strikes
+    ? Object.values(currentSession.strikes).reduce((acc: number, s: any) => acc + s.grid.length, 0)
+    : 0;
+
+  const sortedTimestamps = useMemo(() => {
     if (!currentSession?.strikes) return [];
     const tsSet = new Set<string>();
     Object.values(currentSession.strikes).forEach((s: any) => { s.grid.forEach((c: any) => { if (c.timestamp) tsSet.add(c.timestamp); }); });
     return Array.from(tsSet).sort();
-  })();
+  }, [gridLengthSum, currentSession === null]);
 
   const topStrikes = Object.values(currentSession?.strikes || {})
     .sort((a: any, b: any) => b.pctChange - a.pctChange)

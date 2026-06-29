@@ -17,7 +17,6 @@ exports.Module2StrikeTickSchema = new mongoose_1.Schema({
     minute_timestamp: {
         type: Date,
         required: true,
-        index: true,
     },
     ltp_integer: {
         type: Number,

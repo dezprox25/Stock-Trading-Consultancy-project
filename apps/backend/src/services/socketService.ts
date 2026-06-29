@@ -90,6 +90,13 @@ export const initSocketServer = (io: Server) => {
     });
   });
 
+  // Throttling state for indicators and latest-oi updates to prevent CPU/IO flooding
+  const lastIndicatorEmitTime = new Map<string, number>();
+  const indicatorTimeouts = new Map<string, NodeJS.Timeout>();
+  
+  let lastLatestOiEmitTime = 0;
+  let latestOiTimeout: NodeJS.Timeout | null = null;
+
   // Wire tick ingestion callback to broadcast raw price updates and trigger real-time indicator updates
   setOnTickReceived(async (tick: Tick) => {
     if (!ioServer) return;
@@ -97,10 +104,26 @@ export const initSocketServer = (io: Server) => {
     // Broadcast raw tick to market room
     ioServer.to(`market:${tick.symbol}`).emit("tick", tick);
 
-    // Broadcast latest computed OI metrics to all clients on every tick ingestion
-    ioServer.emit("latest-oi", getLatestModule1OiMetrics());
+    // Broadcast latest computed OI metrics at most once every 500ms
+    const now = Date.now();
+    if (now - lastLatestOiEmitTime >= 500) {
+      ioServer.emit("latest-oi", getLatestModule1OiMetrics());
+      lastLatestOiEmitTime = now;
+      if (latestOiTimeout) {
+        clearTimeout(latestOiTimeout);
+        latestOiTimeout = null;
+      }
+    } else if (!latestOiTimeout) {
+      latestOiTimeout = setTimeout(() => {
+        if (ioServer) {
+          ioServer.emit("latest-oi", getLatestModule1OiMetrics());
+          lastLatestOiEmitTime = Date.now();
+        }
+        latestOiTimeout = null;
+      }, 500);
+    }
 
-    // If this is NIFTY-FUT, trigger indicator evaluations for any active rooms listening to this symbol
+    // If this is NIFTY-FUT, trigger indicator evaluations (throttled to at most once per 500ms per active room)
     if (tick.symbol === "NIFTY-FUT") {
       const timeframes = ["1m", "3m", "5m", "custom"];
       const methods = ["classic", "camarilla", "fibonacci"] as const;
@@ -112,9 +135,31 @@ export const initSocketServer = (io: Server) => {
           // Only compute and emit if there are active sockets connected to this room
           const clients = ioServer.sockets.adapter.rooms.get(roomName);
           if (clients && clients.size > 0) {
-            const indicators = await evaluateIndicators(tick.symbol, tf, m);
-            if (indicators) {
-              ioServer.to(roomName).emit("indicators", indicators);
+            const lastEmit = lastIndicatorEmitTime.get(roomName) || 0;
+            const currentTime = Date.now();
+            
+            const performEvaluation = async () => {
+              if (!ioServer) return;
+              const indicators = await evaluateIndicators(tick.symbol, tf, m);
+              if (indicators) {
+                ioServer.to(roomName).emit("indicators", indicators);
+              }
+              lastIndicatorEmitTime.set(roomName, Date.now());
+            };
+
+            if (currentTime - lastEmit >= 500) {
+              performEvaluation();
+              const existingTimeout = indicatorTimeouts.get(roomName);
+              if (existingTimeout) {
+                clearTimeout(existingTimeout);
+                indicatorTimeouts.delete(roomName);
+              }
+            } else if (!indicatorTimeouts.has(roomName)) {
+              const timeout = setTimeout(() => {
+                performEvaluation();
+                indicatorTimeouts.delete(roomName);
+              }, 500);
+              indicatorTimeouts.set(roomName, timeout);
             }
           }
         }

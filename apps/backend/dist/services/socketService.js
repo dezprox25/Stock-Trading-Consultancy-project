@@ -70,15 +70,37 @@ const initSocketServer = (io) => {
             console.log(`[Socket] Client disconnected: ${socket.id}`);
         });
     });
+    // Throttling state for indicators and latest-oi updates to prevent CPU/IO flooding
+    const lastIndicatorEmitTime = new Map();
+    const indicatorTimeouts = new Map();
+    let lastLatestOiEmitTime = 0;
+    let latestOiTimeout = null;
     // Wire tick ingestion callback to broadcast raw price updates and trigger real-time indicator updates
     (0, dataFeed_1.setOnTickReceived)(async (tick) => {
         if (!ioServer)
             return;
         // Broadcast raw tick to market room
         ioServer.to(`market:${tick.symbol}`).emit("tick", tick);
-        // Broadcast latest computed OI metrics to all clients on every tick ingestion
-        ioServer.emit("latest-oi", (0, module1OiService_1.getLatestModule1OiMetrics)());
-        // If this is NIFTY-FUT, trigger indicator evaluations for any active rooms listening to this symbol
+        // Broadcast latest computed OI metrics at most once every 500ms
+        const now = Date.now();
+        if (now - lastLatestOiEmitTime >= 500) {
+            ioServer.emit("latest-oi", (0, module1OiService_1.getLatestModule1OiMetrics)());
+            lastLatestOiEmitTime = now;
+            if (latestOiTimeout) {
+                clearTimeout(latestOiTimeout);
+                latestOiTimeout = null;
+            }
+        }
+        else if (!latestOiTimeout) {
+            latestOiTimeout = setTimeout(() => {
+                if (ioServer) {
+                    ioServer.emit("latest-oi", (0, module1OiService_1.getLatestModule1OiMetrics)());
+                    lastLatestOiEmitTime = Date.now();
+                }
+                latestOiTimeout = null;
+            }, 500);
+        }
+        // If this is NIFTY-FUT, trigger indicator evaluations (throttled to at most once per 500ms per active room)
         if (tick.symbol === "NIFTY-FUT") {
             const timeframes = ["1m", "3m", "5m", "custom"];
             const methods = ["classic", "camarilla", "fibonacci"];
@@ -88,9 +110,31 @@ const initSocketServer = (io) => {
                     // Only compute and emit if there are active sockets connected to this room
                     const clients = ioServer.sockets.adapter.rooms.get(roomName);
                     if (clients && clients.size > 0) {
-                        const indicators = await (0, pivotService_1.evaluateIndicators)(tick.symbol, tf, m);
-                        if (indicators) {
-                            ioServer.to(roomName).emit("indicators", indicators);
+                        const lastEmit = lastIndicatorEmitTime.get(roomName) || 0;
+                        const currentTime = Date.now();
+                        const performEvaluation = async () => {
+                            if (!ioServer)
+                                return;
+                            const indicators = await (0, pivotService_1.evaluateIndicators)(tick.symbol, tf, m);
+                            if (indicators) {
+                                ioServer.to(roomName).emit("indicators", indicators);
+                            }
+                            lastIndicatorEmitTime.set(roomName, Date.now());
+                        };
+                        if (currentTime - lastEmit >= 500) {
+                            performEvaluation();
+                            const existingTimeout = indicatorTimeouts.get(roomName);
+                            if (existingTimeout) {
+                                clearTimeout(existingTimeout);
+                                indicatorTimeouts.delete(roomName);
+                            }
+                        }
+                        else if (!indicatorTimeouts.has(roomName)) {
+                            const timeout = setTimeout(() => {
+                                performEvaluation();
+                                indicatorTimeouts.delete(roomName);
+                            }, 500);
+                            indicatorTimeouts.set(roomName, timeout);
                         }
                     }
                 }

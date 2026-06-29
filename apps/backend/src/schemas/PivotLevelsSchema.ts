@@ -4,7 +4,6 @@ export const PivotLevelsSchema = new Schema({
   symbol: {
     type: String,
     required: true,
-    index: true,
   },
   date: {
     type: Date,
