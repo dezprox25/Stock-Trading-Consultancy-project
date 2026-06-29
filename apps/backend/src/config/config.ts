@@ -43,6 +43,14 @@ export const config = {
     apiSecret: getEnv("MOD1_API_SECRET") || getEnv("BROKER_API_SECRET"),
     password: getEnv("ZEBU_PASSWORD"),
     factor2: getEnv("ZEBU_FACTOR2"),
+  },
+  
+  dynamicAtm: {
+    enabled: getEnv("ENABLE_DYNAMIC_ATM", false, "false") === "true",
+    masterContractUrl: getEnv("ATM_MASTER_CONTRACT_URL", false, ""),
+    refreshIntervalMs: parseInt(getEnv("ATM_MASTER_REFRESH_INTERVAL", false, "86400000"), 10),
+    strikeRange: parseInt(getEnv("ATM_STRIKE_RANGE", false, "5"), 10),
+    expiryStrategy: getEnv("ATM_EXPIRY_STRATEGY", false, "nearest"),
   }
 };
 
@@ -62,6 +70,8 @@ export const validateSecrets = () => {
   console.log(`[Config] ZEBU_CLIENT_ID=${config.zebu.clientId}`);
   console.log(`[Config] ZEBU_API_KEY=${maskSecret(config.zebu.apiKey)}`);
   console.log(`[Config] ZEBU_PASSWORD=${maskSecret(config.zebu.password)}`);
+  console.log(`[Config] ENABLE_DYNAMIC_ATM=${config.dynamicAtm.enabled}`);
+  console.log(`[Config] ATM_STRIKE_RANGE=${config.dynamicAtm.strikeRange}`);
   
   const missingSecrets: string[] = [];
   

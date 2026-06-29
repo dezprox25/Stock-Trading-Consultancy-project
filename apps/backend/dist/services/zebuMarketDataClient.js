@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.startZebuMarketDataFeed = exports.isZebuMarketDataConfigured = exports.getZebuMissingConfig = exports.isZebuLiveConnected = void 0;
 const ws_1 = __importDefault(require("ws"));
 const zebuOAuthService_1 = require("./zebuOAuthService");
+const atmTokenService_1 = require("./atmTokenService");
 let wsConnected = false;
 const isZebuLiveConnected = () => wsConnected;
 exports.isZebuLiveConnected = isZebuLiveConnected;
@@ -47,12 +48,21 @@ const parseInstrumentEnv = (value) => {
     })
         .filter((instrument) => instrument !== null);
 };
-const getModule1ZebuInstruments = () => [
-    ...parseInstrumentEnv(process.env.ZEBU_NIFTY_SPOT_TOKEN || "NSE|26000:NIFTY-SPOT"),
-    ...parseInstrumentEnv(process.env.ZEBU_NIFTY_FUT_TOKEN),
-    ...parseInstrumentEnv(process.env.ZEBU_NIFTY_CE_TOKENS),
-    ...parseInstrumentEnv(process.env.ZEBU_NIFTY_PE_TOKENS),
-];
+const getModule1ZebuInstruments = () => {
+    if ((0, atmTokenService_1.isDynamicAtmEnabled)()) {
+        const dynamicInstruments = (0, atmTokenService_1.getDynamicAtmInstruments)();
+        if (dynamicInstruments.length > 0) {
+            return dynamicInstruments;
+        }
+        console.log("[ATM] Dynamic ATM enabled but no dynamic instruments resolved yet. Falling back to hardcoded environment tokens.");
+    }
+    return [
+        ...parseInstrumentEnv(process.env.ZEBU_NIFTY_SPOT_TOKEN || "NSE|26000:NIFTY-SPOT"),
+        ...parseInstrumentEnv(process.env.ZEBU_NIFTY_FUT_TOKEN),
+        ...parseInstrumentEnv(process.env.ZEBU_NIFTY_CE_TOKENS),
+        ...parseInstrumentEnv(process.env.ZEBU_NIFTY_PE_TOKENS),
+    ];
+};
 const getZebuMissingConfig = () => {
     const missing = [];
     const wsUrl = getZebuWsUrl();
@@ -80,7 +90,16 @@ const getZebuMissingConfig = () => {
     return missing;
 };
 exports.getZebuMissingConfig = getZebuMissingConfig;
-const isZebuMarketDataConfigured = () => (0, exports.getZebuMissingConfig)().length === 0;
+const isZebuMarketDataConfigured = () => {
+    if ((0, atmTokenService_1.isDynamicAtmEnabled)()) {
+        const dynamicInsts = (0, atmTokenService_1.getDynamicAtmInstruments)();
+        if (dynamicInsts.length === 0) {
+            // Waiting for permission to authenticate and load master contract
+            return false;
+        }
+    }
+    return (0, exports.getZebuMissingConfig)().length === 0;
+};
 exports.isZebuMarketDataConfigured = isZebuMarketDataConfigured;
 const buildInstrumentMap = (instruments) => {
     const symbolByKey = new Map();

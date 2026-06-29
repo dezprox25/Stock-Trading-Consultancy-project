@@ -25,6 +25,7 @@ import { initTrackerEngine } from "./services/trackerService";
 import { initAetramMarketDataService } from "./services/aetramMarketDataService";
 import { initModule1OiService } from "./services/module1OiService";
 import { startMonitoringLoop, getMonitoringStatus } from "./services/monitoringService";
+import { initializeDynamicATM } from "./services/atmTokenService";
 
 const app = express();
 const server = http.createServer(app);
@@ -186,6 +187,9 @@ const startServer = async () => {
   initSocketServer(io);
   initTrackerEngine();
   initAetramMarketDataService();
+  
+  // Initialize dynamic ATM configuration (returns immediately if disabled)
+  initializeDynamicATM();
   
   // Warm up OI cache from Redis before launching live data feed listeners
   await initModule1OiService();

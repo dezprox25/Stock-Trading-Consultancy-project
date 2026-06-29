@@ -1,6 +1,8 @@
 import WebSocket from "ws";
 import { Tick } from "@stock/shared";
 import { getZebuOAuthMissingConfig, resolveZebuSessionToken } from "./zebuOAuthService";
+import { config } from "../config/config";
+import { getDynamicAtmInstruments, isDynamicAtmEnabled } from "./atmTokenService";
 
 type DataSource = "LIVE_MARKET_API" | "SIMULATOR";
 
@@ -60,12 +62,22 @@ const parseInstrumentEnv = (value?: string): ZebuInstrument[] => {
     .filter((instrument): instrument is ZebuInstrument => instrument !== null);
 };
 
-const getModule1ZebuInstruments = () => [
-  ...parseInstrumentEnv(process.env.ZEBU_NIFTY_SPOT_TOKEN || "NSE|26000:NIFTY-SPOT"),
-  ...parseInstrumentEnv(process.env.ZEBU_NIFTY_FUT_TOKEN),
-  ...parseInstrumentEnv(process.env.ZEBU_NIFTY_CE_TOKENS),
-  ...parseInstrumentEnv(process.env.ZEBU_NIFTY_PE_TOKENS),
-];
+const getModule1ZebuInstruments = (): ZebuInstrument[] => {
+  if (isDynamicAtmEnabled()) {
+    const dynamicInstruments = getDynamicAtmInstruments();
+    if (dynamicInstruments.length > 0) {
+      return dynamicInstruments;
+    }
+    console.log("[ATM] Dynamic ATM enabled but no dynamic instruments resolved yet. Falling back to hardcoded environment tokens.");
+  }
+
+  return [
+    ...parseInstrumentEnv(process.env.ZEBU_NIFTY_SPOT_TOKEN || "NSE|26000:NIFTY-SPOT"),
+    ...parseInstrumentEnv(process.env.ZEBU_NIFTY_FUT_TOKEN),
+    ...parseInstrumentEnv(process.env.ZEBU_NIFTY_CE_TOKENS),
+    ...parseInstrumentEnv(process.env.ZEBU_NIFTY_PE_TOKENS),
+  ];
+};
 
 export const getZebuMissingConfig = () => {
   const missing: string[] = [];
@@ -95,7 +107,16 @@ export const getZebuMissingConfig = () => {
   return missing;
 };
 
-export const isZebuMarketDataConfigured = () => getZebuMissingConfig().length === 0;
+export const isZebuMarketDataConfigured = () => {
+  if (isDynamicAtmEnabled()) {
+    const dynamicInsts = getDynamicAtmInstruments();
+    if (dynamicInsts.length === 0) {
+      // Waiting for permission to authenticate and load master contract
+      return false;
+    }
+  }
+  return getZebuMissingConfig().length === 0;
+};
 
 const buildInstrumentMap = (instruments: ZebuInstrument[]) => {
   const symbolByKey = new Map<string, string>();
